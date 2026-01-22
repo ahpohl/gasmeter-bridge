@@ -1,34 +1,17 @@
 meter:
-  device: /dev/ttyUSB0
-  preset: od_type
-  #baud: 9600
-  #data_bits: 7
-  #stop_bits: 1
-  #parity: even   # none | even | odd
-  grid:
-    power_factor: 0.95
-    frequency: 50.00
-
-modbus:
-  tcp:
-    listen: 0.0.0.0
-    port: 502
-  rtu:
-    device: /dev/ttyUSB1
-    preset: sd_type
-    #baud: 9600
-    #data_bits: 8
-    #stop_bits: 1
-    #parity: none   # none | even | odd
-  slave_id: 1
-  request_timeout: 5
-  idle_timeout: 60
-  use_float_model: false
+  device: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AB0LNNZ6-if00-port0
+  level:
+    low: 700
+    high: 950
+    raw_mode: false
+  gas:
+    volume: 5356.38
+    force: false
 
 mqtt:
   broker: localhost
   port: 1883
-  topic: smartmeter-gateway
+  topic: gasmeter-bridge
   #user: mqtt
   #password: "your secret password"
   queue_size: 100
@@ -42,5 +25,4 @@ logger:
   modules:
     main: info
     meter: info
-    modbus: info
     mqtt: info

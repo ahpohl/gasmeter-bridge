@@ -10,7 +10,6 @@
 #include <CLI/CLI.hpp>
 #include <cstdlib>
 #include <iostream>
-#include <memory>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -35,16 +34,6 @@ int main(int argc, char *argv[]) {
   // Optional: prevent specifying both at the same time in help/UX
   configOption->excludes("--version");
 
-  // Privilege dropping options
-  std::string runUser;
-  std::string runGroup;
-  app.add_option("-u,--user", runUser,
-                 "Drop privileges to this user after startup")
-      ->envname("METER_USER");
-  app.add_option("-g,--group", runGroup,
-                 "Drop privileges to this group after startup")
-      ->envname("METER_GROUP");
-
   CLI11_PARSE(app, argc, argv);
 
   // --- Load config ---
@@ -63,42 +52,8 @@ int main(int argc, char *argv[]) {
     mainLogger = spdlog::default_logger();
   mainLogger->info("Starting {} with config '{}'", PROJECT_NAME, config);
 
-  // Warn if --user/--group specified but not running as root
-  if (!Privileges::isRoot() && !runUser.empty()) {
-    mainLogger->error(
-        "--user/--group options specified, but not running as root");
-    return EXIT_FAILURE;
-  }
-
-  // Warn if running as root without privilege drop
-  if (Privileges::isRoot() && runUser.empty()) {
-    mainLogger->warn("Running as root without privilege dropping - "
-                     "consider using --user/--group options");
-  }
-
   // --- Setup signals and shutdown
   SignalHandler handler;
-
-  // --- Start Modbus consumer (optional) ---
-  std::unique_ptr<ModbusSlave> slave;
-  if (cfg.modbus) {
-    slave = std::make_unique<ModbusSlave>(cfg.modbus.value(), handler);
-  } else {
-    mainLogger->info("Modbus slave disabled (no modbus section in config)");
-  }
-
-  // --- Drop privileges after binding to privileged ports ---
-  if (!runUser.empty() && Privileges::isRoot()) {
-    try {
-      Privileges::drop(runUser, runGroup);
-      mainLogger->info("Dropped privileges to user '{}' group '{}'",
-                       Privileges::getCurrentUser(),
-                       Privileges::getCurrentGroup());
-    } catch (const std::exception &ex) {
-      mainLogger->error("Failed to drop privileges: {}", ex.what());
-      return EXIT_FAILURE;
-    }
-  }
 
   // --- Start MQTT consumer ---
   MqttClient mqtt(cfg.mqtt, handler);

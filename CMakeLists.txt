@@ -19,8 +19,8 @@ endif()
 string(REGEX REPLACE "^v" "" GIT_TAG_STRIPPED "${GIT_TAG}")
 
 # Set some basic project attributes
-project (smartmeter-gateway
-	DESCRIPTION "Protocol gateway for domestic meter telemetry"
+project (gasmeter-gateway
+	DESCRIPTION "Bridge analog gas meter readings to MQTT via IR sensor"
 	VERSION ${GIT_TAG_STRIPPED}
 	LANGUAGES CXX
 )
@@ -72,7 +72,6 @@ set(SRC_FILES
     src/config_yaml.cpp
     src/mqtt_client.cpp
     src/meter.cpp
-    src/modbus_slave.cpp
 )
 
 # --- Executable ---
@@ -87,7 +86,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     yaml-cpp
     spdlog::spdlog
     PkgConfig::MOSQUITTO
-    PkgConfig::MODBUS
     nlohmann_json::nlohmann_json
     CLI11::CLI11
 )
