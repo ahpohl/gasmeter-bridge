@@ -4,63 +4,6 @@
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
-static std::optional<ModbusTcpConfig> parseModbusTcp(const YAML::Node &node) {
-  if (!node)
-    return std::nullopt;
-  ModbusTcpConfig tcp;
-  tcp.listen = node["listen"].as<std::string>("0.0.0.0");
-  tcp.port = node["port"].as<int>(502);
-
-  if (tcp.port <= 0 || tcp.port > 65535)
-    throw std::invalid_argument("Modbus TCP port must be in range 1–65535");
-
-  return tcp;
-}
-
-static std::optional<ModbusRtuConfig> parseModbusRtu(const YAML::Node &node) {
-  if (!node)
-    return std::nullopt;
-
-  ModbusRtuConfig rtu;
-  rtu.device = node["device"].as<std::string>("/dev/ttyUSB0");
-
-  // Start with defaults
-  rtu.baud = 9600;
-  rtu.dataBits = 8;
-  rtu.stopBits = 1;
-  rtu.parity = MeterTypes::Parity::None;
-
-  // Apply preset if specified
-  if (node["preset"]) {
-    auto preset = MeterTypes::parsePreset(node["preset"].as<std::string>());
-    auto defaults = MeterTypes::getPresetDefaults(preset.value());
-    rtu.baud = defaults.baud;
-    rtu.dataBits = defaults.dataBits;
-    rtu.stopBits = defaults.stopBits;
-    rtu.parity = defaults.parity;
-  }
-
-  // Apply manual overrides
-  if (node["baud"])
-    rtu.baud = node["baud"].as<int>();
-  if (node["data_bits"])
-    rtu.dataBits = node["data_bits"].as<int>();
-  if (node["stop_bits"])
-    rtu.stopBits = node["stop_bits"].as<int>();
-  if (node["parity"])
-    rtu.parity = MeterTypes::parseParity(node["parity"].as<std::string>());
-
-  // Validate
-  if (rtu.baud <= 0)
-    throw std::invalid_argument("modbus.rtu.baud must be positive");
-  if (rtu.dataBits < 5 || rtu.dataBits > 8)
-    throw std::invalid_argument("modbus.rtu.data_bits must be between 5 and 8");
-  if (!(rtu.stopBits == 1 || rtu.stopBits == 2))
-    throw std::invalid_argument("modbus.rtu.stop_bits must be 1 or 2");
-
-  return rtu;
-}
-
 static std::optional<ReconnectDelayConfig>
 parseReconnectDelay(const YAML::Node &node) {
   if (!node)
@@ -77,24 +20,6 @@ parseReconnectDelay(const YAML::Node &node) {
     throw std::invalid_argument("reconnect_delay.max must be positive");
   if (cfg.min >= cfg.max)
     throw std::invalid_argument("reconnect_delay.min must be smaller than max");
-
-  return cfg;
-}
-
-static std::optional<GridConfig> parseGrid(const YAML::Node &node) {
-  if (!node)
-    return std::nullopt;
-
-  GridConfig cfg;
-  cfg.powerFactor = node["power_factor"].as<double>(0.95);
-  cfg.frequency = node["frequency"].as<double>(50.0);
-
-  // Validate
-  if (cfg.powerFactor <= -1.0 || cfg.powerFactor >= 1.0)
-    throw std::invalid_argument(
-        "meter. grid.power_factor must be in range (-1.0, 1.0]");
-  if (cfg.frequency <= 0.0)
-    throw std::invalid_argument("meter.grid.frequency must be positive");
 
   return cfg;
 }
@@ -132,10 +57,6 @@ static MeterConfig parseMeter(const YAML::Node &node) {
   if (node["parity"])
     cfg.parity = MeterTypes::parseParity(node["parity"].as<std::string>());
 
-  // Parse optional grid parameters
-  if (node["grid"])
-    cfg.grid = parseGrid(node["grid"]);
-
   // Validate
   if (cfg.baud <= 0)
     throw std::invalid_argument("meter.baud must be positive");
@@ -143,51 +64,6 @@ static MeterConfig parseMeter(const YAML::Node &node) {
     throw std::invalid_argument("meter.data_bits must be between 5 and 8");
   if (!(cfg.stopBits == 1 || cfg.stopBits == 2))
     throw std::invalid_argument("meter.stop_bits must be 1 or 2");
-
-  return cfg;
-}
-
-static std::optional<ModbusRootConfig> parseModbus(const YAML::Node &node) {
-  if (!node)
-    return std::nullopt;
-
-  ModbusRootConfig cfg;
-
-  // --- Subsections ---
-  cfg.tcp = parseModbusTcp(node["tcp"]);
-  cfg.rtu = parseModbusRtu(node["rtu"]);
-
-  if (!cfg.tcp && !cfg.rtu)
-    throw std::runtime_error(
-        "Config must specify at least one of 'modbus.tcp' or 'modbus.rtu'");
-  if (cfg.tcp && cfg.rtu)
-    cfg.rtu = std::nullopt; // TCP takes priority
-
-  // MANDATORY boolean: use_float_model
-  if (!node["use_float_model"]) {
-    throw std::runtime_error(
-        "Missing mandatory 'modbus.use_float_model' key in config");
-  }
-  cfg.useFloatModel = node["use_float_model"].as<bool>();
-
-  // --- Basic parameters ---
-  cfg.slaveId = node["slave_id"].as<int>(1);
-  cfg.requestTimeout = node["request_timeout"].as<int>(5);
-  cfg.idleTimeout = node["idle_timeout"].as<int>(60);
-
-  // --- Validation ---
-  if (cfg.slaveId < 1 || cfg.slaveId > 247)
-    throw std::invalid_argument("modbus.slave_id must be in range 1–247");
-
-  if (cfg.requestTimeout <= 0)
-    throw std::invalid_argument("modbus.request_timeout must be positive");
-
-  if (cfg.idleTimeout <= 0)
-    throw std::invalid_argument("modbus.idle_timeout must be positive");
-
-  if (cfg.idleTimeout < cfg.requestTimeout)
-    throw std::invalid_argument(
-        "modbus.idle_timeout must be >= request_timeout");
 
   return cfg;
 }
@@ -264,7 +140,6 @@ Config loadConfig(const std::string &path) {
   YAML::Node root = YAML::LoadFile(path);
   Config cfg;
 
-  cfg.modbus = parseModbus(root["modbus"]);
   cfg.mqtt = parseMqtt(root["mqtt"]);
   cfg.logger = parseLogger(root["logger"]);
   cfg.meter = parseMeter(root["meter"]);

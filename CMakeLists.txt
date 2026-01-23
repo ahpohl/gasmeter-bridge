@@ -19,7 +19,7 @@ endif()
 string(REGEX REPLACE "^v" "" GIT_TAG_STRIPPED "${GIT_TAG}")
 
 # Set some basic project attributes
-project (gasmeter-gateway
+project (gasmeter-bridge
 	DESCRIPTION "Bridge analog gas meter readings to MQTT via IR sensor"
 	VERSION ${GIT_TAG_STRIPPED}
 	LANGUAGES CXX

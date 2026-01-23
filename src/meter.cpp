@@ -367,10 +367,6 @@ std::expected<void, ModbusError> Meter::updateValuesAndJson() {
   values.powerFactor = 0.95;
   values.frequency = 50.0;
 
-  if (cfg_.grid) {
-    values.powerFactor = cfg_.grid->powerFactor;
-    values.frequency = cfg_.grid->frequency;
-  }
   values.phase1.powerFactor = values.powerFactor;
   values.phase2.powerFactor = values.powerFactor;
   values.phase3.powerFactor = values.powerFactor;

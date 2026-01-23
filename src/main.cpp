@@ -3,9 +3,7 @@
 #include "logger.h"
 #include "meter.h"
 #include "meter_types.h"
-#include "modbus_slave.h"
 #include "mqtt_client.h"
-#include "privileges.h"
 #include "signal_handler.h"
 #include <CLI/CLI.hpp>
 #include <cstdlib>
@@ -63,18 +61,12 @@ int main(int argc, char *argv[]) {
 
   // --- Setup callbacks
   meter.setUpdateCallback(
-      [&cfg, &mqtt, &slave](std::string jsonDump, MeterTypes::Values values) {
+      [&cfg, &mqtt](std::string jsonDump, MeterTypes::Values values) {
         mqtt.publish(std::move(jsonDump), cfg.mqtt.topic + "/values");
-        if (slave) {
-          slave->updateValues(std::move(values));
-        }
       });
   meter.setDeviceCallback(
-      [&cfg, &mqtt, &slave](std::string jsonDump, MeterTypes::Device device) {
+      [&cfg, &mqtt](std::string jsonDump, MeterTypes::Device device) {
         mqtt.publish(std::move(jsonDump), cfg.mqtt.topic + "/device");
-        if (slave) {
-          slave->updateDevice(std::move(device));
-        }
       });
   meter.setAvailabilityCallback([&mqtt, &cfg](std::string availability) {
     mqtt.publish(std::move(availability), cfg.mqtt.topic + "/availability");
