@@ -27,41 +27,18 @@ struct MeterTypes {
   };
 
   // --- Meter value types ---
-  struct Phase {
-    double phVoltage{0.0};
-    double ppVoltage{0.0};
-    double current{0.0};
-    double activePower{0.0};
-    double reactivePower{0.0};
-    double apparentPower{0.0};
-    double powerFactor{0.0};
-  };
-
   struct Values {
     uint64_t time{0};
-    uint64_t activeSensorTime{0};
-    double energy{0.0};
-    double phVoltage{0.0};
-    double ppVoltage{0.0};
-    double current{0.0};
-    double activePower{0.0};
-    double reactivePower{0.0};
-    double apparentPower{0.0};
-    double powerFactor{0.0};
-    double frequency{0.0};
-    Phase phase1;
-    Phase phase2;
-    Phase phase3;
+    uint64_t volume{0};
+    bool flow{false};
   };
 
   struct Device {
     std::string manufacturer;
     std::string model;
-    std::string options;
     std::string serialNumber;
     std::string fwVersion;
-    std::string status;
-    int phases{0};
+    std::string gwVersion;
   };
 
   enum class ErrorAction { NONE, RECONNECT, SHUTDOWN };

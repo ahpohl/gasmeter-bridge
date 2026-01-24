@@ -8,10 +8,8 @@
 #include <algorithm>
 #include <asm-generic/ioctls.h>
 #include <chrono>
-#include <cmath>
 #include <expected>
 #include <nlohmann/json.hpp>
-#include <regex>
 #include <sstream>
 #include <string>
 #include <sys/file.h>
@@ -308,167 +306,12 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
                     std::chrono::system_clock::now().time_since_epoch())
                     .count();
 
-  std::regex obexRegex(R"(^([0-9]-0:[0-9]+.[0-9]+.[0-9]+\*255)\(([^)]+)\))");
-  std::string line;
-
-  int lineNum = 0;
-  while (std::getline(iss, line)) {
-    ++lineNum;
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-
-    if (line.empty() || (line.size() && (line[0] == '/' || line[0] == '!')))
-      continue;
-
-    try {
-      std::smatch match;
-      if (!std::regex_search(line, match, obexRegex))
-        throw std::invalid_argument("Malformed OBEX expression");
-
-      std::string obis = match[1];
-      std::string value_unit = match[2];
-
-      if (obis == "1-0:1.8.0*255") {
-        size_t pos = value_unit.find("*");
-        values.energy = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:16.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.activePower = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:36.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase1.activePower = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:56.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase2.activePower = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:76.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase3.activePower = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:32.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase1.phVoltage = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:52.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase2.phVoltage = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "1-0:72.7.0*255") {
-        size_t pos = value_unit.find("*");
-        values.phase3.phVoltage = std::stod(value_unit.substr(0, pos));
-      } else if (obis == "0-0:96.8.0*255") {
-        size_t pos = value_unit.find("*");
-        values.activeSensorTime =
-            std::stoul(value_unit.substr(0, pos), nullptr, 16);
-      }
-    } catch (const std::exception &err) {
-      std::ostringstream oss;
-      oss << "[" << line << "]: " << err.what();
-      return std::unexpected(MeterError::custom(EPROTO, oss.str()));
-    }
-  }
-
-  // power factor and frequency (assumed)
-  values.powerFactor = 0.95;
-  values.frequency = 50.0;
-
-  values.phase1.powerFactor = values.powerFactor;
-  values.phase2.powerFactor = values.powerFactor;
-  values.phase3.powerFactor = values.powerFactor;
-
-  // apparent power
-  values.apparentPower = values.activePower / values.powerFactor;
-  values.phase1.apparentPower =
-      values.phase1.activePower / values.phase1.powerFactor;
-  values.phase2.apparentPower =
-      values.phase2.activePower / values.phase2.powerFactor;
-  values.phase3.apparentPower =
-      values.phase3.activePower / values.phase3.powerFactor;
-
-  // reactive power
-  values.reactivePower =
-      std::tan(std::acos(values.powerFactor)) * values.activePower;
-  values.phase1.reactivePower = std::tan(std::acos(values.phase1.powerFactor)) *
-                                values.phase1.activePower;
-  values.phase2.reactivePower = std::tan(std::acos(values.phase2.powerFactor)) *
-                                values.phase2.activePower;
-  values.phase3.reactivePower = std::tan(std::acos(values.phase3.powerFactor)) *
-                                values.phase3.activePower;
-
-  // voltages
-  values.phVoltage = (values.phase1.phVoltage + values.phase2.phVoltage +
-                      values.phase3.phVoltage) /
-                     3.0;
-  values.phase1.ppVoltage =
-      std::sqrt(values.phase1.phVoltage * values.phase1.phVoltage +
-                values.phase2.phVoltage * values.phase2.phVoltage +
-                values.phase1.phVoltage * values.phase2.phVoltage);
-  values.phase2.ppVoltage =
-      std::sqrt(values.phase2.phVoltage * values.phase2.phVoltage +
-                values.phase3.phVoltage * values.phase3.phVoltage +
-                values.phase2.phVoltage * values.phase3.phVoltage);
-  values.phase3.ppVoltage =
-      std::sqrt(values.phase3.phVoltage * values.phase3.phVoltage +
-                values.phase1.phVoltage * values.phase1.phVoltage +
-                values.phase3.phVoltage * values.phase1.phVoltage);
-  values.ppVoltage = (values.phase1.ppVoltage + values.phase2.ppVoltage +
-                      values.phase3.ppVoltage) /
-                     3.0;
-
-  // currents
-  values.phase1.current = values.phase1.activePower /
-                          (values.phase1.phVoltage * values.powerFactor);
-  values.phase2.current = values.phase2.activePower /
-                          (values.phase2.phVoltage * values.powerFactor);
-  values.phase3.current = values.phase3.activePower /
-                          (values.phase3.phVoltage * values.powerFactor);
-  values.current =
-      values.phase1.current + values.phase2.current + values.phase3.current;
-
   json newJson;
   json phases = json::array();
 
-  phases.push_back({
-      {"id", 1},
-      {"power_active", JsonUtils::roundTo(values.phase1.activePower, 2)},
-      {"power_apparent", JsonUtils::roundTo(values.phase1.apparentPower, 2)},
-      {"power_reactive", JsonUtils::roundTo(values.phase1.reactivePower, 2)},
-      {"power_factor", JsonUtils::roundTo(values.phase1.powerFactor, 2)},
-      {"voltage_ph", JsonUtils::roundTo(values.phase1.phVoltage, 1)},
-      {"voltage_pp", JsonUtils::roundTo(values.phase1.ppVoltage, 1)},
-      {"current", JsonUtils::roundTo(values.phase1.current, 3)},
-
-  });
-
-  phases.push_back({
-      {"id", 2},
-      {"power_active", JsonUtils::roundTo(values.phase2.activePower, 2)},
-      {"power_apparent", JsonUtils::roundTo(values.phase2.apparentPower, 2)},
-      {"power_reactive", JsonUtils::roundTo(values.phase2.reactivePower, 2)},
-      {"power_factor", JsonUtils::roundTo(values.phase2.powerFactor, 2)},
-      {"voltage_ph", JsonUtils::roundTo(values.phase2.phVoltage, 1)},
-      {"voltage_pp", JsonUtils::roundTo(values.phase2.ppVoltage, 1)},
-      {"current", JsonUtils::roundTo(values.phase2.current, 3)},
-
-  });
-
-  phases.push_back({
-      {"id", 3},
-      {"power_active", JsonUtils::roundTo(values.phase3.activePower, 2)},
-      {"power_apparent", JsonUtils::roundTo(values.phase3.apparentPower, 2)},
-      {"power_reactive", JsonUtils::roundTo(values.phase3.reactivePower, 2)},
-      {"power_factor", JsonUtils::roundTo(values.phase3.powerFactor, 2)},
-      {"voltage_ph", JsonUtils::roundTo(values.phase3.phVoltage, 1)},
-      {"voltage_pp", JsonUtils::roundTo(values.phase3.ppVoltage, 1)},
-      {"current", JsonUtils::roundTo(values.phase3.current, 3)},
-  });
-
   newJson["time"] = values.time;
-  newJson["energy"] = JsonUtils::roundTo(values.energy, 6);
-  newJson["power_active"] = JsonUtils::roundTo(values.activePower, 2);
-  newJson["power_apparent"] = JsonUtils::roundTo(values.apparentPower, 2);
-  newJson["power_reactive"] = JsonUtils::roundTo(values.reactivePower, 2);
-  newJson["power_factor"] = JsonUtils::roundTo(values.powerFactor, 2);
-  newJson["phases"] = phases;
-  newJson["active_time"] = values.activeSensorTime;
-  newJson["frequency"] = JsonUtils::roundTo(values.frequency, 2);
-  newJson["voltage_ph"] = JsonUtils::roundTo(values.phVoltage, 1);
-  newJson["voltage_pp"] = JsonUtils::roundTo(values.ppVoltage, 1);
+  newJson["volume"] = JsonUtils::roundTo(values.volume, 6);
+  newJson["flow"] = values.flow;
 
   // Update shared values and JSON with lock
   {
@@ -496,59 +339,11 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
 
   MeterTypes::Device newDevice{};
 
-  std::istringstream iss;
-  {
-    std::lock_guard<std::mutex> lock(cbMutex_);
-    iss.str(telegram_);
-  }
-
-  std::regex obexRegex(R"(^([0-9]-0:[0-9]+.[0-9]+.[0-9]+\*255)\(([^)]+)\))");
-  std::regex versionRegex(R"(^(\/[A-Za-z0-9]+)_([A-Za-z0-9]+)$)");
-  std::string line;
-
-  int lineNum = 0;
-  while (std::getline(iss, line)) {
-    ++lineNum;
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-
-    if (line.empty() || line[0] == '!')
-      continue;
-
-    try {
-      // Version line
-      if (!line.empty() && line[0] == '/') {
-        std::smatch versionMatch;
-        if (!std::regex_search(line, versionMatch, versionRegex)) {
-          throw std::invalid_argument("Malformed version expression");
-        }
-        newDevice.fwVersion = versionMatch[2].str();
-        continue;
-      }
-
-      // OBEX line
-      std::smatch obexMatch;
-      if (!std::regex_search(line, obexMatch, obexRegex)) {
-        throw std::invalid_argument("Malformed OBEX expression");
-      }
-
-      std::string obis = obexMatch[1];
-      if (obis == "1-0:96.1.0*255") {
-        newDevice.serialNumber = obexMatch[2].str();
-      } else if (obis == "1-0:96.5.0*255") {
-        newDevice.status = obexMatch[2].str();
-      }
-
-    } catch (const std::exception &err) {
-      std::ostringstream oss;
-      oss << "[" << line << "]: " << err.what();
-      return std::unexpected(MeterError::custom(EPROTO, oss.str()));
-    }
-  }
-
-  newDevice.manufacturer = "EasyMeter";
-  newDevice.model = "DD3-BZ06-ETA-ODZ1";
-  newDevice.options = std::string(PROJECT_VERSION) + "-" + GIT_COMMIT_HASH;
-  newDevice.phases = 3;
+  newDevice.manufacturer = "Gasmeter";
+  newDevice.model = "model";
+  newDevice.gwVersion = std::string(PROJECT_VERSION) + "-" + GIT_COMMIT_HASH;
+  newDevice.fwVersion = "firmware";
+  newDevice.serialNumber = "123456";
 
   // ---- Build ordered JSON ----
   json newJson;
@@ -557,9 +352,7 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
   newJson["model"] = newDevice.model;
   newJson["serial_number"] = newDevice.serialNumber;
   newJson["firmware_version"] = newDevice.fwVersion;
-  newJson["options"] = newDevice.options;
-  newJson["phases"] = newDevice.phases;
-  newJson["status"] = newDevice.status;
+  newJson["gateway_version"] = newDevice.gwVersion;
 
   meterLogger_->debug("{}", newJson.dump());
 
