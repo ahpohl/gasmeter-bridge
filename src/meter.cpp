@@ -2,8 +2,8 @@
 #include "config.h"
 #include "config_yaml.h"
 #include "json_utils.h"
+#include "meter_error.h"
 #include "meter_types.h"
-#include "modbus_error.h"
 #include "signal_handler.h"
 #include <algorithm>
 #include <asm-generic/ioctls.h>
@@ -70,26 +70,26 @@ void Meter::setAvailabilityCallback(std::function<void(std::string)> cb) {
 }
 
 MeterTypes::ErrorAction
-Meter::handleResult(std::expected<void, ModbusError> &&result) {
+Meter::handleResult(std::expected<void, MeterError> &&result) {
   if (result) {
     return MeterTypes::ErrorAction::NONE;
   }
 
-  const ModbusError &err = result.error();
+  const MeterError &err = result.error();
 
-  if (err.severity == ModbusError::Severity::FATAL) {
+  if (err.severity == MeterError::Severity::FATAL) {
     // Fatal error occurred - initiate shutdown sequence
     meterLogger_->error("FATAL Meter error: {}", err.describe());
     handler_.shutdown();
     return MeterTypes::ErrorAction::SHUTDOWN;
 
-  } else if (err.severity == ModbusError::Severity::TRANSIENT) {
+  } else if (err.severity == MeterError::Severity::TRANSIENT) {
     // Temporary error - disconnect and reconnect
     meterLogger_->warn("Transient Meter error: {}", err.describe());
     disconnect();
     return MeterTypes::ErrorAction::RECONNECT;
 
-  } else if (err.severity == ModbusError::Severity::SHUTDOWN) {
+  } else if (err.severity == MeterError::Severity::SHUTDOWN) {
     // Shutdown already in progress - just exit cleanly
     meterLogger_->trace("Meter operation cancelled due to shutdown: {}",
                         err.describe());
@@ -99,10 +99,10 @@ Meter::handleResult(std::expected<void, ModbusError> &&result) {
   return MeterTypes::ErrorAction::NONE;
 }
 
-std::expected<void, ModbusError> Meter::tryConnect(void) {
+std::expected<void, MeterError> Meter::tryConnect(void) {
   if (!handler_.isRunning()) {
     return std::unexpected(
-        ModbusError::custom(EINTR, "tryConnect(): Shutdown in progress"));
+        MeterError::custom(EINTR, "tryConnect(): Shutdown in progress"));
   }
 
   if (serialPort_ >= 0)
@@ -111,14 +111,14 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
   serialPort_ = open(cfg_.device.c_str(), O_RDONLY | O_NOCTTY);
   if (serialPort_ == -1) {
     return std::unexpected(
-        ModbusError::fromErrno("Opening serial device failed"));
+        MeterError::fromErrno("Opening serial device failed"));
   }
 
   if (!isatty(serialPort_)) {
     int saved_errno = errno;
     close(serialPort_);
     errno = saved_errno;
-    return std::unexpected(ModbusError::fromErrno("Device is not a tty"));
+    return std::unexpected(MeterError::fromErrno("Device is not a tty"));
   }
 
   if (flock(serialPort_, LOCK_EX | LOCK_NB) == -1) {
@@ -126,7 +126,7 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
     close(serialPort_);
     errno = saved_errno;
     return std::unexpected(
-        ModbusError::fromErrno("Failed to lock serial device"));
+        MeterError::fromErrno("Failed to lock serial device"));
   }
 
   if (ioctl(serialPort_, TIOCEXCL) == -1) {
@@ -134,7 +134,7 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
     close(serialPort_);
     errno = saved_errno;
     return std::unexpected(
-        ModbusError::fromErrno("Failed to set exclusive lock"));
+        MeterError::fromErrno("Failed to set exclusive lock"));
   }
 
   termios serialPortSettings;
@@ -143,7 +143,7 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
     close(serialPort_);
     errno = saved_errno;
     return std::unexpected(
-        ModbusError::fromErrno("Failed to get serial port attributes"));
+        MeterError::fromErrno("Failed to get serial port attributes"));
   }
 
   cfmakeraw(&serialPortSettings);
@@ -155,7 +155,7 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
     int saved_errno = errno;
     close(serialPort_);
     errno = saved_errno;
-    return std::unexpected(ModbusError::fromErrno(
+    return std::unexpected(MeterError::fromErrno(
         "Failed to set serial port speed {} baud", cfg_.baud));
   }
 
@@ -199,7 +199,7 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
     close(serialPort_);
     errno = saved_errno;
     return std::unexpected(
-        ModbusError::fromErrno("Failed to set serial port attributes"));
+        MeterError::fromErrno("Failed to set serial port attributes"));
   }
 
   // flush both directions if desired after applying settings
@@ -215,15 +215,15 @@ std::expected<void, ModbusError> Meter::tryConnect(void) {
   return {};
 }
 
-std::expected<void, ModbusError> Meter::readTelegram() {
+std::expected<void, MeterError> Meter::readTelegram() {
   if (!handler_.isRunning()) {
     return std::unexpected(
-        ModbusError::custom(EINTR, "readTelegram(): Shutdown in progress"));
+        MeterError::custom(EINTR, "readTelegram(): Shutdown in progress"));
   }
 
   if (serialPort_ == -1)
     return std::unexpected(
-        ModbusError::custom(ENOTCONN, "readTelegram(): Meter not connected"));
+        MeterError::custom(ENOTCONN, "readTelegram(): Meter not connected"));
 
   std::vector<char> buffer(BUFFER_SIZE);
   std::vector<char> packet(TELEGRAM_SIZE);
@@ -236,7 +236,7 @@ std::expected<void, ModbusError> Meter::readTelegram() {
     // Add shutdown check BEFORE blocking read
     if (!handler_.isRunning()) {
       return std::unexpected(
-          ModbusError::custom(EINTR, "readTelegram(): Shutdown in progress"));
+          MeterError::custom(EINTR, "readTelegram(): Shutdown in progress"));
     }
 
     std::fill(buffer.begin(), buffer.end(), '\0');
@@ -244,13 +244,13 @@ std::expected<void, ModbusError> Meter::readTelegram() {
 
     if (bytesReceived == -1) {
       return std::unexpected(
-          ModbusError::fromErrno("Failed to read serial device"));
+          MeterError::fromErrno("Failed to read serial device"));
     }
 
     if (bytesReceived == 0) {
       // Timeout - shouldn't happen mid-telegram
-      return std::unexpected(ModbusError::custom(
-          ETIMEDOUT, "readTelegram(): Timeout during read"));
+      return std::unexpected(
+          MeterError::custom(ETIMEDOUT, "readTelegram(): Timeout during read"));
     }
 
     // Process bytes
@@ -270,7 +270,7 @@ std::expected<void, ModbusError> Meter::readTelegram() {
 
   // Ensure we have at least 3 bytes and the third-from-last is '!'
   if (packetPos < 3 || packet[packetPos - 3] != '!') {
-    return std::unexpected(ModbusError::custom(
+    return std::unexpected(MeterError::custom(
         EPROTO, "readTelegram(): telegram stream not in sync"));
   }
 
@@ -285,9 +285,9 @@ std::expected<void, ModbusError> Meter::readTelegram() {
   return {};
 }
 
-std::expected<void, ModbusError> Meter::updateValuesAndJson() {
+std::expected<void, MeterError> Meter::updateValuesAndJson() {
   if (!handler_.isRunning()) {
-    return std::unexpected(ModbusError::custom(
+    return std::unexpected(MeterError::custom(
         EINTR, "updateValuesAndJson(): Shutdown in progress"));
   }
   {
@@ -359,7 +359,7 @@ std::expected<void, ModbusError> Meter::updateValuesAndJson() {
     } catch (const std::exception &err) {
       std::ostringstream oss;
       oss << "[" << line << "]: " << err.what();
-      return std::unexpected(ModbusError::custom(EPROTO, oss.str()));
+      return std::unexpected(MeterError::custom(EPROTO, oss.str()));
     }
   }
 
@@ -482,9 +482,9 @@ std::expected<void, ModbusError> Meter::updateValuesAndJson() {
   return {};
 }
 
-std::expected<void, ModbusError> Meter::updateDeviceAndJson() {
+std::expected<void, MeterError> Meter::updateDeviceAndJson() {
   if (!handler_.isRunning()) {
-    return std::unexpected(ModbusError::custom(
+    return std::unexpected(MeterError::custom(
         EINTR, "updateDeviceAndJson(): Shutdown in progress"));
   }
 
@@ -541,7 +541,7 @@ std::expected<void, ModbusError> Meter::updateDeviceAndJson() {
     } catch (const std::exception &err) {
       std::ostringstream oss;
       oss << "[" << line << "]: " << err.what();
-      return std::unexpected(ModbusError::custom(EPROTO, oss.str()));
+      return std::unexpected(MeterError::custom(EPROTO, oss.str()));
     }
   }
 
