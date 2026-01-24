@@ -38,12 +38,10 @@ private:
   std::expected<void, MeterError> updateValuesAndJson(void);
   std::expected<void, MeterError> updateDeviceAndJson(void);
   std::expected<void, MeterError> tryConnect(void);
-  std::expected<void, MeterError> readTelegram(void);
 
   const MeterConfig &cfg_;
   MeterTypes::Values values_;
   MeterTypes::Device device_;
-  std::string telegram_;
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
   std::shared_ptr<spdlog::logger> meterLogger_;

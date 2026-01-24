@@ -78,6 +78,7 @@ static MeterConfig parseMeter(const YAML::Node &node) {
 
   MeterConfig cfg;
   cfg.device = node["device"].as<std::string>("/dev/ttyUSB0");
+  cfg.updateInterval = node["update_interval"].as<int>(300);
 
   // Start with defaults
   cfg.baud = 9600;
@@ -116,6 +117,8 @@ static MeterConfig parseMeter(const YAML::Node &node) {
     throw std::invalid_argument("meter.data_bits must be between 5 and 8");
   if (!(cfg.stopBits == 1 || cfg.stopBits == 2))
     throw std::invalid_argument("meter.stop_bits must be 1 or 2");
+  if (cfg.updateInterval <= 0)
+    throw std::invalid_argument("modbus.update_interval must be positive");
 
   return cfg;
 }

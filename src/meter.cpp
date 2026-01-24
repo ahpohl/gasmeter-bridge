@@ -213,94 +213,13 @@ std::expected<void, MeterError> Meter::tryConnect(void) {
   return {};
 }
 
-std::expected<void, MeterError> Meter::readTelegram() {
-  if (!handler_.isRunning()) {
-    return std::unexpected(
-        MeterError::custom(EINTR, "readTelegram(): Shutdown in progress"));
-  }
-
-  if (serialPort_ == -1)
-    return std::unexpected(
-        MeterError::custom(ENOTCONN, "readTelegram(): Meter not connected"));
-
-  std::vector<char> buffer(BUFFER_SIZE);
-  std::vector<char> packet(TELEGRAM_SIZE);
-  size_t packetPos = 0;
-  bool messageBegin = false;
-  bool telegramComplete = false;
-
-  // In readTelegram():
-  while (packetPos < TELEGRAM_SIZE && !telegramComplete) {
-    // Add shutdown check BEFORE blocking read
-    if (!handler_.isRunning()) {
-      return std::unexpected(
-          MeterError::custom(EINTR, "readTelegram(): Shutdown in progress"));
-    }
-
-    std::fill(buffer.begin(), buffer.end(), '\0');
-    ssize_t bytesReceived = ::read(serialPort_, buffer.data(), BUFFER_SIZE);
-
-    if (bytesReceived == -1) {
-      return std::unexpected(
-          MeterError::fromErrno("Failed to read serial device"));
-    }
-
-    if (bytesReceived == 0) {
-      // Timeout - shouldn't happen mid-telegram
-      return std::unexpected(
-          MeterError::custom(ETIMEDOUT, "readTelegram(): Timeout during read"));
-    }
-
-    // Process bytes
-    for (ssize_t i = 0; i < bytesReceived && packetPos < TELEGRAM_SIZE; ++i) {
-      char c = buffer[i];
-      if (c == '/')
-        messageBegin = true;
-      if (messageBegin) {
-        packet[packetPos++] = c;
-        if (packetPos >= 3 && packet[packetPos - 3] == '!') {
-          telegramComplete = true;
-          break;
-        }
-      }
-    }
-  }
-
-  // Ensure we have at least 3 bytes and the third-from-last is '!'
-  if (packetPos < 3 || packet[packetPos - 3] != '!') {
-    return std::unexpected(MeterError::custom(
-        EPROTO, "readTelegram(): telegram stream not in sync"));
-  }
-
-  meterLogger_->trace("Received telegram (len {}):\n{}", packetPos,
-                      std::string(packet.begin(), packet.begin() + packetPos));
-
-  {
-    std::lock_guard<std::mutex> lock(cbMutex_);
-    telegram_.assign(packet.begin(), packet.begin() + packetPos);
-  }
-
-  return {};
-}
-
 std::expected<void, MeterError> Meter::updateValuesAndJson() {
   if (!handler_.isRunning()) {
     return std::unexpected(MeterError::custom(
         EINTR, "updateValuesAndJson(): Shutdown in progress"));
   }
-  {
-    std::lock_guard<std::mutex> lock(cbMutex_);
-    if (telegram_.empty())
-      return {};
-  }
 
   MeterTypes::Values values{};
-
-  std::istringstream iss;
-  {
-    std::lock_guard<std::mutex> lock(cbMutex_);
-    iss.str(telegram_);
-  }
 
   values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch())
@@ -329,12 +248,6 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
   if (!handler_.isRunning()) {
     return std::unexpected(MeterError::custom(
         EINTR, "updateDeviceAndJson(): Shutdown in progress"));
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(cbMutex_);
-    if (telegram_.empty())
-      return {};
   }
 
   MeterTypes::Device newDevice{};
@@ -385,13 +298,6 @@ void Meter::runLoop() {
       continue;
     }
 
-    // Read telegram - on any error, loop restarts (will try reconnect)
-    auto readAction = handleResult(readTelegram());
-    if (readAction == MeterTypes::ErrorAction::SHUTDOWN)
-      break;
-    else if (readAction == MeterTypes::ErrorAction::RECONNECT)
-      continue;
-
     // Update device
     auto deviceAction = handleResult(updateDeviceAndJson());
     if (deviceAction == MeterTypes::ErrorAction::SHUTDOWN)
@@ -419,6 +325,11 @@ void Meter::runLoop() {
         updateCallback_(jsonValues_.dump(), values_);
       }
     }
+
+    // --- Wait for next update interval ---
+    std::unique_lock<std::mutex> lock(cbMutex_);
+    cv_.wait_for(lock, std::chrono::seconds(cfg_.updateInterval),
+                 [this] { return !handler_.isRunning(); });
   }
 
   meterLogger_->debug("Meter run loop stopped.");

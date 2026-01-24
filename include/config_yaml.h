@@ -36,6 +36,7 @@ struct MeterConfig {
   MeterTypes::Parity parity;
   LevelConfig level;
   GasConfig gas;
+  int updateInterval;
 };
 
 // MQTT config
