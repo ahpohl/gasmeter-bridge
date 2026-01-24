@@ -14,13 +14,28 @@ struct ReconnectDelayConfig {
   bool exponential;
 };
 
-// Meter config
+// --- Meter level config ---
+struct LevelConfig {
+  int low;
+  int high;
+  std::optional<std::string> calibrationLog;
+};
+
+// --- Gas config ---
+struct GasConfig {
+  double initial;
+  bool reset;
+};
+
+// --- Meter config
 struct MeterConfig {
   std::string device;
   int baud;
   int dataBits;
   int stopBits;
   MeterTypes::Parity parity;
+  LevelConfig level;
+  GasConfig gas;
 };
 
 // MQTT config

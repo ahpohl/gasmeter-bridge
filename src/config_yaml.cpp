@@ -24,6 +24,54 @@ parseReconnectDelay(const YAML::Node &node) {
   return cfg;
 }
 
+static LevelConfig parseLevel(const YAML::Node &node) {
+  if (!node)
+    throw std::runtime_error("Missing 'meter.level' section in config");
+
+  LevelConfig cfg;
+
+  if (!node["low"])
+    throw std::runtime_error("Missing required field: meter.level.low");
+  if (!node["high"])
+    throw std::runtime_error("Missing required field: meter.level.high");
+
+  cfg.low = node["low"].as<int>();
+  cfg.high = node["high"].as<int>();
+
+  // Optional calibration log
+  if (node["calibration_log"])
+    cfg.calibrationLog = node["calibration_log"].as<std::string>();
+
+  // Validate
+  if (cfg.low < 0)
+    throw std::invalid_argument("meter.level.low must be non-negative");
+  if (cfg.high < 0)
+    throw std::invalid_argument("meter.level.high must be non-negative");
+  if (cfg.low >= cfg.high)
+    throw std::invalid_argument("meter.level.low must be less than high");
+
+  return cfg;
+}
+
+static GasConfig parseGas(const YAML::Node &node) {
+  if (!node)
+    throw std::runtime_error("Missing 'meter.gas' section in config");
+
+  GasConfig cfg;
+
+  if (!node["initial"])
+    throw std::runtime_error("Missing required field: meter.gas.initial");
+
+  cfg.initial = node["initial"].as<double>();
+  cfg.reset = node["reset"].as<bool>(false);
+
+  // Validate
+  if (cfg.initial < 0.0)
+    throw std::invalid_argument("meter.gas.initial must be non-negative");
+
+  return cfg;
+}
+
 static MeterConfig parseMeter(const YAML::Node &node) {
   if (!node)
     throw std::runtime_error("Missing 'meter' section in config");
@@ -56,6 +104,10 @@ static MeterConfig parseMeter(const YAML::Node &node) {
     cfg.stopBits = node["stop_bits"].as<int>();
   if (node["parity"])
     cfg.parity = MeterTypes::parseParity(node["parity"].as<std::string>());
+
+  // Parse nested level and gas sections
+  cfg.level = parseLevel(node["level"]);
+  cfg.gas = parseGas(node["gas"]);
 
   // Validate
   if (cfg.baud <= 0)

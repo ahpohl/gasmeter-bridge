@@ -8,9 +8,9 @@ meter:
   level:
     low: 700
     high: 950
-  raw_mode: false
+    #calibration_log: /tmp/ir.log
   gas:
-    volume: 5356.38
+    initial: 5356.38
     reset: false
 
 mqtt:
