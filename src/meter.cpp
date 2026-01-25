@@ -5,12 +5,10 @@
 #include "meter_error.h"
 #include "meter_types.h"
 #include "signal_handler.h"
-#include <algorithm>
 #include <asm-generic/ioctls.h>
 #include <chrono>
 #include <expected>
 #include <nlohmann/json.hpp>
-#include <sstream>
 #include <string>
 #include <sys/file.h>
 #include <sys/ioctl.h>
@@ -224,6 +222,9 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch())
                     .count();
+
+  // values.volume = get volume
+  // values.flow = get flow state
 
   json newJson;
   json phases = json::array();

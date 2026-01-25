@@ -78,7 +78,7 @@ static MeterConfig parseMeter(const YAML::Node &node) {
 
   MeterConfig cfg;
   cfg.device = node["device"].as<std::string>("/dev/ttyUSB0");
-  cfg.updateInterval = node["update_interval"].as<int>(300);
+  cfg.updateInterval = node["update_interval"].as<int>(60);
 
   // Start with defaults
   cfg.baud = 9600;

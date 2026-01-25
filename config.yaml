@@ -12,6 +12,7 @@ meter:
   gas:
     initial: 5356.38
     reset: false
+  update_interval: 60
 
 mqtt:
   broker: localhost
