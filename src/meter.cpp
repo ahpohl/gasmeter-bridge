@@ -95,122 +95,6 @@ Meter::handleResult(std::expected<void, MeterError> &&result) {
   return MeterTypes::ErrorAction::NONE;
 }
 
-std::expected<void, MeterError> Meter::tryConnect(void) {
-  if (!handler_.isRunning()) {
-    return std::unexpected(
-        MeterError::custom(EINTR, "tryConnect(): Shutdown in progress"));
-  }
-
-  if (serialPort_ >= 0)
-    return {};
-
-  serialPort_ = open(cfg_.device.c_str(), O_RDONLY | O_NOCTTY);
-  if (serialPort_ == -1) {
-    return std::unexpected(
-        MeterError::fromErrno("Opening serial device failed"));
-  }
-
-  if (!isatty(serialPort_)) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(MeterError::fromErrno("Device is not a tty"));
-  }
-
-  if (flock(serialPort_, LOCK_EX | LOCK_NB) == -1) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(
-        MeterError::fromErrno("Failed to lock serial device"));
-  }
-
-  if (ioctl(serialPort_, TIOCEXCL) == -1) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(
-        MeterError::fromErrno("Failed to set exclusive lock"));
-  }
-
-  termios serialPortSettings;
-  if (tcgetattr(serialPort_, &serialPortSettings) == -1) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(
-        MeterError::fromErrno("Failed to get serial port attributes"));
-  }
-
-  cfmakeraw(&serialPortSettings);
-
-  // set baud (both directions)
-  speed_t baudSpeed = MeterTypes::baudToSpeed(cfg_.baud);
-  if (cfsetispeed(&serialPortSettings, baudSpeed) < 0 ||
-      cfsetospeed(&serialPortSettings, baudSpeed) < 0) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(MeterError::fromErrno(
-        "Failed to set serial port speed {} baud", cfg_.baud));
-  }
-
-  // Base flags: enable receiver, ignore modem control lines
-  serialPortSettings.c_cflag |= (CLOCAL | CREAD);
-
-  // Clear size/parity/stop/flow flags first to avoid unexpected bits
-  serialPortSettings.c_cflag &= ~(CSIZE | PARENB | PARODD | CSTOPB | CRTSCTS);
-
-  // Set data bits
-  serialPortSettings.c_cflag |= MeterTypes::dataBitsToFlag(cfg_.dataBits);
-
-  // Set parity
-  switch (cfg_.parity) {
-  case MeterTypes::Parity::Even:
-    serialPortSettings.c_cflag |= PARENB;
-    serialPortSettings.c_cflag &= ~PARODD;
-    break;
-  case MeterTypes::Parity::Odd:
-    serialPortSettings.c_cflag |= PARENB;
-    serialPortSettings.c_cflag |= PARODD;
-    break;
-  case MeterTypes::Parity::None:
-  default:
-    // PARENB already cleared above
-    break;
-  }
-
-  // Set stop bits (2 stop bits if stopBits == 2, otherwise 1)
-  if (cfg_.stopBits == 2) {
-    serialPortSettings.c_cflag |= CSTOPB;
-  }
-
-  // Non-blocking read:  return immediately with available data (VMIN=0), 0.5s
-  // timeout for first byte (VTIME=5)
-  serialPortSettings.c_cc[VMIN] = BUFFER_SIZE;
-  serialPortSettings.c_cc[VTIME] = 5;
-
-  if (tcsetattr(serialPort_, TCSANOW, &serialPortSettings)) {
-    int saved_errno = errno;
-    close(serialPort_);
-    errno = saved_errno;
-    return std::unexpected(
-        MeterError::fromErrno("Failed to set serial port attributes"));
-  }
-
-  // flush both directions if desired after applying settings
-  tcflush(serialPort_, TCIOFLUSH);
-
-  meterLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
-                     MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
-                     cfg_.baud);
-
-  if (availabilityCallback_)
-    availabilityCallback_("connected");
-
-  return {};
-}
-
 std::expected<void, MeterError> Meter::updateValuesAndJson() {
   if (!handler_.isRunning()) {
     return std::unexpected(MeterError::custom(
@@ -298,6 +182,13 @@ void Meter::runLoop() {
       }
       continue;
     }
+
+    meterLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
+                       MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
+                       cfg_.baud);
+
+    if (availabilityCallback_)
+      availabilityCallback_("connected");
 
     // Update device
     auto deviceAction = handleResult(updateDeviceAndJson());

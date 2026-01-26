@@ -1,11 +1,11 @@
-#ifndef METER_TYPES_H
-#define METER_TYPES_H
+#ifndef FIRMWARE_UTILS_H
+#define FIRMWARE_UTILS_H
 
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
 
-namespace MeterUtils {
+namespace FirmwareUtils {
 
 inline uint16_t crc16(const uint8_t *packet, size_t length) {
   // crc16 polynomial, 1021H bit reversed
@@ -51,6 +51,6 @@ inline void logBuffer(const uint8_t *const buffer, const int size) {
   std::cout << std::endl;
 }
 
-} // namespace MeterUtils
+} // namespace FirmwareUtils
 
-#endif /* METER_UTILS_H */
+#endif /* FIRMWARE_UTILS_H */

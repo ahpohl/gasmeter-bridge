@@ -72,6 +72,7 @@ set(SRC_FILES
     src/config_yaml.cpp
     src/mqtt_client.cpp
     src/meter.cpp
+    src/firmware.cpp
 )
 
 # --- Executable ---

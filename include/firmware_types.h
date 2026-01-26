@@ -1,28 +1,9 @@
-#ifndef PROTOCOL_H
-#define PROTOCOL_H
+#ifndef FIRMWARE_TYPES_H_
+#define FIRMWARE_TYPES_H_
 
-#include "meter_error.h"
-#include <cstdint>
 #include <string>
 
-class Protocol {
-  static constexpr int SEND_BUFFER_SIZE = 8;
-  static constexpr int RECEIVE_BUFFER_SIZE = 7;
-
-public:
-  explicit Protocol();
-  virtual ~Protocol();
-
-  std::expected<void, MeterError> setMeterVolume(const float &volume);
-  std::expected<void, MeterError> clearMeterVolume(void);
-  std::expected<void, MeterError> setThresholdLevels(const short int &low,
-                                                     const short int &high);
-
-  enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };
-  std::expected<void, MeterError> readDspValue(float &value,
-                                               const DspValue &type);
-
-private:
+struct FirmwareTypes {
   enum class Status : unsigned char {
     OK = 0x00,
     UartNoData = 0x01,
@@ -41,6 +22,8 @@ private:
     SetThresholds = 3,
     MeasureRequestDsp = 4
   };
+
+  enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };
 
   // Helper functions
   inline std::string statusToString(Status status) {
@@ -67,12 +50,6 @@ private:
       return "Unknown";
     }
   }
-
-  std::expected<void, MeterError> send(Command cmd, uint8_t b1, uint8_t b2,
-                                       uint8_t b3, uint8_t b4, uint8_t b5);
-
-  int writeBytes(int fd, uint8_t const *buffer, const int &length);
-  int readBytes(int fd, uint8_t *buffer, const int &length);
 };
 
-#endif /* PROTOCOL_H */
+#endif /* FIRMWARE_TYPES_H_ */
