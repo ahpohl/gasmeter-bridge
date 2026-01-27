@@ -50,7 +50,7 @@ struct FirmwareTypes {
     CommandNotImplemented = 99
   };
 
-  enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };
+  enum class DspValue : unsigned char { Volume = 1, RawIr = 2 };
 };
 
 #endif /* FIRMWARE_TYPES_H_ */

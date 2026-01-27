@@ -80,43 +80,11 @@ static MeterConfig parseMeter(const YAML::Node &node) {
   cfg.device = node["device"].as<std::string>("/dev/ttyUSB0");
   cfg.updateInterval = node["update_interval"].as<int>(60);
 
-  // Start with defaults
-  cfg.baud = 9600;
-  cfg.dataBits = 8;
-  cfg.stopBits = 1;
-  cfg.parity = MeterTypes::Parity::None;
-
-  // Apply preset if specified
-  if (node["preset"]) {
-    auto preset = MeterTypes::parsePreset(node["preset"].as<std::string>());
-    auto defaults = MeterTypes::getPresetDefaults(preset.value());
-    cfg.baud = defaults.baud;
-    cfg.dataBits = defaults.dataBits;
-    cfg.stopBits = defaults.stopBits;
-    cfg.parity = defaults.parity;
-  }
-
-  // Apply manual overrides
-  if (node["baud"])
-    cfg.baud = node["baud"].as<int>();
-  if (node["data_bits"])
-    cfg.dataBits = node["data_bits"].as<int>();
-  if (node["stop_bits"])
-    cfg.stopBits = node["stop_bits"].as<int>();
-  if (node["parity"])
-    cfg.parity = MeterTypes::parseParity(node["parity"].as<std::string>());
-
   // Parse nested level and gas sections
   cfg.level = parseLevel(node["level"]);
   cfg.gas = parseGas(node["gas"]);
 
   // Validate
-  if (cfg.baud <= 0)
-    throw std::invalid_argument("meter.baud must be positive");
-  if (cfg.dataBits < 5 || cfg.dataBits > 8)
-    throw std::invalid_argument("meter.data_bits must be between 5 and 8");
-  if (!(cfg.stopBits == 1 || cfg.stopBits == 2))
-    throw std::invalid_argument("meter.stop_bits must be 1 or 2");
   if (cfg.updateInterval <= 0)
     throw std::invalid_argument("modbus.update_interval must be positive");
 

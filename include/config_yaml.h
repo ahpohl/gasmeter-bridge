@@ -30,10 +30,6 @@ struct GasConfig {
 // --- Meter config
 struct MeterConfig {
   std::string device;
-  int baud;
-  int dataBits;
-  int stopBits;
-  MeterTypes::Parity parity;
   LevelConfig level;
   GasConfig gas;
   int updateInterval;

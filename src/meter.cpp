@@ -73,9 +73,6 @@ Meter::handleResult(std::expected<void, MeterError> &&result) {
     // Temporary error - disconnect, wait and reconnect
     meterLogger_->warn("Transient Meter error: {}", err.describe());
     disconnect();
-    std::unique_lock<std::mutex> lock(cbMutex_);
-    cv_.wait_for(lock, std::chrono::seconds(1),
-                 [this] { return !handler_.isRunning(); });
     return MeterTypes::ErrorAction::RECONNECT;
 
   } else if (err.severity == MeterError::Severity::SHUTDOWN) {

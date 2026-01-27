@@ -1,10 +1,5 @@
 meter:
   device: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AB0LNNZ6-if00-port0
-  preset: sd_type
-  #baud: 9600
-  #data_bits: 8
-  #stop_bits: 1
-  #parity: none   # none | even | odd
   level:
     low: 700
     high: 950
