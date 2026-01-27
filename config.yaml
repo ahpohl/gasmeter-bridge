@@ -8,7 +8,7 @@ meter:
   level:
     low: 700
     high: 950
-    #calibration_log: /tmp/ir.log
+    calibration_log: /tmp/ir.log
   gas:
     initial: 5356.38
     reset: false

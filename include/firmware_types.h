@@ -4,6 +4,7 @@
 #include <string>
 
 struct FirmwareTypes {
+
   enum class Status : unsigned char {
     OK = 0x00,
     UartNoData = 0x01,
@@ -16,17 +17,7 @@ struct FirmwareTypes {
     VariableNotExist = 0x80
   };
 
-  enum class Command : unsigned char {
-    ClearMeterVolume = 1,
-    SetMeterVolume = 2,
-    SetThresholds = 3,
-    MeasureRequestDsp = 4
-  };
-
-  enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };
-
-  // Helper functions
-  inline std::string statusToString(Status status) {
+  static inline std::string statusToString(Status status) {
     switch (status) {
     case Status::OK:
       return "Everything is OK";
@@ -50,6 +41,15 @@ struct FirmwareTypes {
       return "Unknown";
     }
   }
+
+  enum class Command : unsigned char {
+    ClearMeterVolume = 1,
+    SetMeterVolume = 2,
+    SetThresholds = 3,
+    MeasureRequestDsp = 4
+  };
+
+  enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };
 };
 
 #endif /* FIRMWARE_TYPES_H_ */

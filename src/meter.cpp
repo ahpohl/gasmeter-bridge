@@ -35,17 +35,10 @@ Meter::~Meter() {
 }
 
 void Meter::disconnect(void) {
-  {
-    if (serialPort_ != -1) {
-      close(serialPort_);
-      serialPort_ = -1;
+  if (availabilityCallback_)
+    availabilityCallback_("disconnected");
 
-      if (availabilityCallback_)
-        availabilityCallback_("disconnected");
-
-      meterLogger_->info("Meter disconnected");
-    }
-  }
+  meterLogger_->info("Meter disconnected");
 }
 
 void Meter::setUpdateCallback(

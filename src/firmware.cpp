@@ -5,20 +5,34 @@
 #include "meter_error.h"
 #include "signal_handler.h"
 #include <asm-generic/ioctls.h>
+#include <cerrno>
 #include <cstdint>
 #include <expected>
 #include <fcntl.h>
+#include <spdlog/logger.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 
 Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler)
-    : cfg_(cfg), handler_(signalHandler) {};
+    : cfg_(cfg), handler_(signalHandler) {
+
+  meterLogger_ = spdlog::get("meter");
+  if (!meterLogger_)
+    meterLogger_ = spdlog::default_logger();
+};
+
+Firmware::~Firmware(void) {
+  if (serialPort_ != -1) {
+    close(serialPort_);
+    serialPort_ = -1;
+  }
+}
 
 std::expected<void, MeterError> Firmware::connect(void) {
   if (!handler_.isRunning()) {
     return std::unexpected(
-        MeterError::custom(EINTR, "tryConnect(): Shutdown in progress"));
+        MeterError::custom(EINTR, "connect(): Shutdown in progress"));
   }
 
   if (serialPort_ >= 0)
@@ -105,6 +119,9 @@ std::expected<void, MeterError> Firmware::connect(void) {
     serialPortSettings.c_cflag |= CSTOPB;
   }
 
+  // Disable reset after modem hangup
+  serialPortSettings.c_cflag &= ~HUPCL;
+
   // Non-blocking read:  return immediately with available data (VMIN=0), 0.5s
   // timeout for first byte (VTIME=5)
   serialPortSettings.c_cc[VMIN] = BUFFER_SIZE;
@@ -129,48 +146,105 @@ std::expected<void, MeterError> Firmware::send(FirmwareTypes::Command cmd,
                                                uint8_t b3, uint8_t b4,
                                                uint8_t b5) {
 
-  txBuffer[0] = static_cast<uint8_t>(cmd);
-  txBuffer[1] = b1;
-  txBuffer[2] = b2;
-  txBuffer[3] = b3;
-  txBuffer[4] = b4;
-  txBuffer[5] = b5;
+  txBuffer_[0] = static_cast<uint8_t>(cmd);
+  txBuffer_[1] = b1;
+  txBuffer_[2] = b2;
+  txBuffer_[3] = b3;
+  txBuffer_[4] = b4;
+  txBuffer_[5] = b5;
 
-  uint16_t crc = FirmwareUtils::crc16(txBuffer, 6);
-  txBuffer[6] = FirmwareUtils::lowByte(crc);
-  txBuffer[7] = FirmwareUtils::highByte(crc);
+  uint16_t crc = FirmwareUtils::crc16(txBuffer_.data(), 6);
+  txBuffer_[6] = FirmwareUtils::lowByte(crc);
+  txBuffer_[7] = FirmwareUtils::highByte(crc);
 
-  if (writeBytes(txBuffer, SEND_BUFFER_SIZE) < 0) {
-    ErrorMessage =
-        std::string("Write bytes failed: ") + Serial->GetErrorMessage();
-    Serial->Flush();
-    return false;
+  auto wbytes = writeBytes(txBuffer_.data(), txBuffer_.size());
+  if (!wbytes)
+    return std::unexpected(wbytes.error());
+  meterLogger_->trace("Send: {}", FirmwareUtils::logBuffer(txBuffer_));
+
+  auto rbytes = readBytes(rxBuffer_.data(), rxBuffer_.size());
+  if (!rbytes)
+    return std::unexpected(rbytes.error());
+  meterLogger_->trace("Receive: {}", FirmwareUtils::logBuffer(rxBuffer_));
+
+  if (!(FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]) ==
+        FirmwareUtils::crc16(rxBuffer_.data(), 5))) {
+    return std::unexpected(MeterError::custom(
+        EPROTO, "Received serial package with CRC mismatch"));
   }
-  if (Log) {
-    std::cout << "Send: ";
-    FirmwareUtils::logBuffer(txBuffer, SEND_BUFFER_SIZE);
+  if (rxBuffer_[0]) {
+    return std::unexpected(MeterError::custom(
+        EPROTO, "Command failed: {} (0x{:02X})",
+        FirmwareTypes::statusToString(
+            static_cast<FirmwareTypes::Status>(rxBuffer_[0])),
+        rxBuffer_[0]));
   }
 
-  if (readBytes(ReceiveData, RECEIVE_BUFFER_SIZE) < 0) {
-    ErrorMessage =
-        std::string("Read bytes failed: ") + Serial->GetErrorMessage();
-    Serial->Flush();
-    return false;
-  }
-  if (Log) {
-    std::cout << "Receive: ";
-    FirmwareUtils::logBuffer(rxBuffer, RECEIVE_BUFFER_SIZE);
-  }
-  if (!(word(ReceiveData[5], ReceiveData[6]) == crc16(ReceiveData, 5))) {
-    ErrorMessage = "Received serial package with CRC mismatch";
-    Serial->Flush();
-    return false;
-  }
-  if (ReceiveData[0]) {
-    ErrorMessage = std::string("Transmission error: ") +
-                   TransmissionState(ReceiveData[0]) + " (" +
-                   std::to_string(ReceiveData[0]) + ")";
-    return false;
-  }
   return {};
+}
+
+std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
+                                                   const int &length) {
+  int iterations = 0;
+  const int maxIterations = 500;
+
+  while (iterations < maxIterations) {
+    int bytesAvailable = 0;
+    int rc = ioctl(serialPort_, FIONREAD, &bytesAvailable);
+    if (rc < 0)
+      return std::unexpected(MeterError::fromErrno("FIONREAD failed"));
+
+    // intercharacter delay: 1 / baud rate * 1e6 = 17.4 µs
+    int intercharacterDelay = 1.0 / cfg_.baud * 1e6;
+    std::this_thread::sleep_for(std::chrono::microseconds(intercharacterDelay));
+    if (bytesAvailable >= length)
+      break;
+    iterations++;
+  }
+
+  if (iterations == maxIterations) {
+    return std::unexpected(
+        MeterError::custom(ETIMEDOUT, "Timeout, firmware did not respond"));
+  }
+
+  int bytesReceived = read(serialPort_, buffer, length);
+  if (bytesReceived < 0) {
+    return std::unexpected(MeterError::fromErrno("Reading from device failed"));
+  }
+
+  return bytesReceived;
+}
+
+std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
+                                                    const int &length) {
+
+  int bytesSent = write(serialPort_, buffer, length);
+  if (bytesSent < 0) {
+    return std::unexpected(MeterError::fromErrno("Failed to write bytes"));
+  }
+  tcdrain(serialPort_);
+
+  return bytesSent;
+}
+
+std::expected<float, MeterError>
+Firmware::readDspValue(const FirmwareTypes::DspValue &type) {
+
+  auto dsp = send(FirmwareTypes::Command::MeasureRequestDsp,
+                  static_cast<uint8_t>(type), 0, 0, 0, 0);
+  if (!dsp)
+    return std::unexpected(dsp.error());
+
+  float value = FirmwareUtils::bytesToFloat(rxBuffer_[1], rxBuffer_[2],
+                                            rxBuffer_[3], rxBuffer_[4]);
+  return value / 100.0f;
+}
+
+/* ----- public api ----- */
+
+std::expected<float, MeterError> Firmware::getVolume(void) {
+  auto value = readDspValue(FirmwareTypes::DspValue::GasVolume);
+  if (!value)
+    return std::unexpected(value.error());
+  return value;
 }

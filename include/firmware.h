@@ -7,6 +7,7 @@
 #include "signal_handler.h"
 #include <array>
 #include <cstdint>
+#include <spdlog/logger.h>
 
 class Firmware {
 public:
@@ -17,8 +18,8 @@ public:
                                                      const int &high);
   std::expected<void, MeterError> setVolume(const float &volume);
   std::expected<void, MeterError> clearVolume(void);
-  double getVolume(void) const;
-  double getFlow(void) const;
+  std::expected<float, MeterError> getVolume(void);
+  double getFlow(void);
 
   static constexpr int SEND_BUFFER_SIZE = 8;
   static constexpr int RECEIVE_BUFFER_SIZE = 7;
@@ -28,19 +29,21 @@ private:
   int serialPort_{-1};
   const MeterConfig &cfg_;
   SignalHandler &handler_;
-  std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer;
-  std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer;
+  std::shared_ptr<spdlog::logger> meterLogger_;
+  std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
+  std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
 
   std::expected<void, MeterError> connect(void);
   std::expected<void, MeterError> send(FirmwareTypes::Command cmd, uint8_t b1,
                                        uint8_t b2, uint8_t b3, uint8_t b4,
                                        uint8_t b5);
 
-  int writeBytes(uint8_t const *buffer, const int &length);
-  int readBytes(uint8_t *buffer, const int &length);
+  std::expected<int, MeterError> writeBytes(uint8_t const *buffer,
+                                            const int &length);
+  std::expected<int, MeterError> readBytes(uint8_t *buffer, const int &length);
 
-  std::expected<void, MeterError>
-  readDspValue(float &value, const FirmwareTypes::DspValue &type);
+  std::expected<float, MeterError>
+  readDspValue(const FirmwareTypes::DspValue &type);
 };
 
 #endif /* FIRMWARE_H */

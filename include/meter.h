@@ -2,6 +2,7 @@
 #define METER_H_
 
 #include "config_yaml.h"
+#include "firmware.h"
 #include "meter_error.h"
 #include "meter_types.h"
 #include "signal_handler.h"
@@ -37,7 +38,6 @@ private:
   void disconnect(void);
   std::expected<void, MeterError> updateValuesAndJson(void);
   std::expected<void, MeterError> updateDeviceAndJson(void);
-  std::expected<void, MeterError> tryConnect(void);
 
   const MeterConfig &cfg_;
   MeterTypes::Values values_;
@@ -45,7 +45,6 @@ private:
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
   std::shared_ptr<spdlog::logger> meterLogger_;
-  int serialPort_{-1};
 
   // --- threading / callbacks ---
   std::function<void(std::string, MeterTypes::Values)> updateCallback_;
@@ -55,7 +54,6 @@ private:
   mutable std::mutex cbMutex_;
   std::condition_variable cv_;
   std::thread worker_;
-  std::thread dongle_;
 };
 
 #endif /* METER_H_ */

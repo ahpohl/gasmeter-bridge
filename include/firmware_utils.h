@@ -1,9 +1,12 @@
 #ifndef FIRMWARE_UTILS_H
 #define FIRMWARE_UTILS_H
 
+#include <array>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <string>
 
 namespace FirmwareUtils {
 
@@ -43,12 +46,23 @@ inline uint16_t word(const uint8_t &msb, const uint8_t &lsb) {
   return ((msb & 0xFF) << 8) | lsb;
 }
 
-inline void logBuffer(const uint8_t *const buffer, const int size) {
-  for (int i = 0; i < size; ++i) {
-    std::cout << std::uppercase << std::hex << std::setfill('0') << std::setw(2)
-              << (((int)buffer[i]) & 0xFF) << " ";
+template <std::size_t N>
+inline std::string logBuffer(const std::array<uint8_t, N> &buffer) {
+  std::ostringstream oss;
+  for (const auto &byte : buffer) {
+    oss << std::uppercase << std::hex << std::setfill('0') << std::setw(2)
+        << (static_cast<int>(byte) & 0xFF) << " ";
   }
-  std::cout << std::endl;
+  return oss.str();
+}
+
+inline float bytesToFloat(const uint8_t &b1, const uint8_t &b2,
+                          const uint8_t &b3, const uint8_t &b4) {
+  // Assumes little-endian byte order
+  int32_t valueInt =
+      static_cast<int32_t>(b1) | (static_cast<int32_t>(b2) << 8) |
+      (static_cast<int32_t>(b3) << 16) | (static_cast<int32_t>(b4) << 24);
+  return static_cast<float>(valueInt);
 }
 
 } // namespace FirmwareUtils
