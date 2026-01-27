@@ -35,10 +35,10 @@ Meter::~Meter() {
 }
 
 void Meter::disconnect(void) {
+  firmware_.disconnect();
+
   if (availabilityCallback_)
     availabilityCallback_("disconnected");
-
-  meterLogger_->info("Meter disconnected");
 }
 
 void Meter::setUpdateCallback(
@@ -73,9 +73,12 @@ Meter::handleResult(std::expected<void, MeterError> &&result) {
     return MeterTypes::ErrorAction::SHUTDOWN;
 
   } else if (err.severity == MeterError::Severity::TRANSIENT) {
-    // Temporary error - disconnect and reconnect
+    // Temporary error - disconnect, wait and reconnect
     meterLogger_->warn("Transient Meter error: {}", err.describe());
     disconnect();
+    std::unique_lock<std::mutex> lock(cbMutex_);
+    cv_.wait_for(lock, std::chrono::seconds(1),
+                 [this] { return !handler_.isRunning(); });
     return MeterTypes::ErrorAction::RECONNECT;
 
   } else if (err.severity == MeterError::Severity::SHUTDOWN) {
@@ -102,7 +105,6 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   try {
     values.volume = MeterError::getOrThrow(firmware_.getVolume());
   } catch (const MeterError &err) {
-    meterLogger_->warn("{}", err.message);
     return std::unexpected(err);
   }
   values.flow = ((values.volume - previousVolume_) > 0) ? true : false;
@@ -162,7 +164,6 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
 }
 
 void Meter::runLoop() {
-  constexpr int reconnectDelay = 1;
 
   while (handler_.isRunning()) {
 
@@ -170,15 +171,6 @@ void Meter::runLoop() {
     auto connectAction = handleResult(firmware_.connect());
     if (connectAction == MeterTypes::ErrorAction::SHUTDOWN)
       break;
-
-    if (connectAction == MeterTypes::ErrorAction::RECONNECT) {
-      {
-        std::unique_lock<std::mutex> lock(cbMutex_);
-        cv_.wait_for(lock, std::chrono::seconds(reconnectDelay),
-                     [this] { return !handler_.isRunning(); });
-      }
-      continue;
-    }
 
     if (availabilityCallback_)
       availabilityCallback_("connected");

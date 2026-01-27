@@ -30,5 +30,6 @@ logger:
   level: info     # global default: off | error | warn | info | debug | trace
   modules:
     main: info
-    meter: trace
+    meter: debug
+    firmware: trace
     mqtt: info

@@ -17,118 +17,21 @@
 Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler)
     : cfg_(cfg), handler_(signalHandler) {
 
-  meterLogger_ = spdlog::get("meter");
-  if (!meterLogger_)
-    meterLogger_ = spdlog::default_logger();
-};
+  firmwareLogger_ = spdlog::get("firmware");
+  if (!firmwareLogger_)
+    firmwareLogger_ = spdlog::default_logger();
+}
 
-Firmware::~Firmware(void) {
+Firmware::~Firmware(void) { disconnect(); }
+
+void Firmware::disconnect(void) {
   if (serialPort_ != -1) {
     close(serialPort_);
     serialPort_ = -1;
   }
+
+  firmwareLogger_->info("Meter disconnected");
 }
-
-std::expected<void, MeterError> Firmware::send(FirmwareTypes::Command cmd,
-                                               uint8_t b1, uint8_t b2,
-                                               uint8_t b3, uint8_t b4,
-                                               uint8_t b5) {
-
-  txBuffer_[0] = static_cast<uint8_t>(cmd);
-  txBuffer_[1] = b1;
-  txBuffer_[2] = b2;
-  txBuffer_[3] = b3;
-  txBuffer_[4] = b4;
-  txBuffer_[5] = b5;
-
-  uint16_t crc = FirmwareUtils::crc16(txBuffer_.data(), 6);
-  txBuffer_[6] = FirmwareUtils::lowByte(crc);
-  txBuffer_[7] = FirmwareUtils::highByte(crc);
-
-  auto wbytes = writeBytes(txBuffer_.data(), txBuffer_.size());
-  if (!wbytes)
-    return std::unexpected(wbytes.error());
-  meterLogger_->trace("Sent bytes {}", FirmwareUtils::logBuffer(txBuffer_));
-
-  auto rbytes = readBytes(rxBuffer_.data(), rxBuffer_.size());
-  if (!rbytes)
-    return std::unexpected(rbytes.error());
-  meterLogger_->trace("Received bytes {}", FirmwareUtils::logBuffer(rxBuffer_));
-
-  if (!(FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]) ==
-        FirmwareUtils::crc16(rxBuffer_.data(), 5))) {
-    return std::unexpected(MeterError::custom(
-        EPROTO, "Received serial package with CRC mismatch"));
-  }
-  if (rxBuffer_[0]) {
-    return std::unexpected(MeterError::custom(
-        EPROTO, "Command failed: {} (0x{:02X})",
-        FirmwareTypes::statusToString(
-            static_cast<FirmwareTypes::Status>(rxBuffer_[0])),
-        rxBuffer_[0]));
-  }
-
-  return {};
-}
-
-std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
-                                                   const int &length) {
-  int iterations = 0;
-  const int maxIterations = 500;
-
-  while (iterations < maxIterations) {
-    int bytesAvailable = 0;
-    int rc = ioctl(serialPort_, FIONREAD, &bytesAvailable);
-    if (rc < 0)
-      return std::unexpected(MeterError::fromErrno("FIONREAD failed"));
-
-    // intercharacter delay: 1 / baud rate * 1e6 = 17.4 µs
-    int intercharacterDelay = 1.0 / cfg_.baud * 1e6;
-    std::this_thread::sleep_for(std::chrono::microseconds(intercharacterDelay));
-    if (bytesAvailable >= length)
-      break;
-    iterations++;
-  }
-
-  if (iterations == maxIterations) {
-    return std::unexpected(
-        MeterError::custom(ETIMEDOUT, "Timeout, firmware did not respond"));
-  }
-
-  int bytesReceived = read(serialPort_, buffer, length);
-  if (bytesReceived < 0) {
-    return std::unexpected(MeterError::fromErrno("Reading from device failed"));
-  }
-
-  return bytesReceived;
-}
-
-std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
-                                                    const int &length) {
-
-  int bytesSent = write(serialPort_, buffer, length);
-  if (bytesSent < 0) {
-    return std::unexpected(MeterError::fromErrno("Failed to write bytes"));
-  }
-  tcdrain(serialPort_);
-
-  return bytesSent;
-}
-
-std::expected<float, MeterError>
-Firmware::readDspValue(const FirmwareTypes::DspValue &type) {
-
-  auto dsp = send(FirmwareTypes::Command::MeasureRequestDsp,
-                  static_cast<uint8_t>(type), 0, 0, 0, 0);
-  if (!dsp)
-    return std::unexpected(dsp.error());
-
-  float value = FirmwareUtils::bytesToFloat(rxBuffer_[1], rxBuffer_[2],
-                                            rxBuffer_[3], rxBuffer_[4]);
-  return value / 100.0f;
-}
-
-/* ----- public api ----- */
 
 std::expected<void, MeterError> Firmware::connect(void) {
   if (!handler_.isRunning()) {
@@ -139,7 +42,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   if (serialPort_ >= 0)
     return {};
 
-  serialPort_ = open(cfg_.device.c_str(), O_RDONLY | O_NOCTTY);
+  serialPort_ = open(cfg_.device.c_str(), O_RDWR | O_NOCTTY);
   if (serialPort_ == -1) {
     return std::unexpected(
         MeterError::fromErrno("Opening serial device failed"));
@@ -223,9 +126,8 @@ std::expected<void, MeterError> Firmware::connect(void) {
   // Disable reset after modem hangup
   serialPortSettings.c_cflag &= ~HUPCL;
 
-  // Non-blocking read:  return immediately with available data (VMIN=0), 0.5s
-  // timeout for first byte (VTIME=5)
-  serialPortSettings.c_cc[VMIN] = BUFFER_SIZE;
+  // blocking read with timeout
+  serialPortSettings.c_cc[VMIN] = RECEIVE_BUFFER_SIZE;
   serialPortSettings.c_cc[VTIME] = 5;
 
   if (tcsetattr(serialPort_, TCSANOW, &serialPortSettings)) {
@@ -239,11 +141,123 @@ std::expected<void, MeterError> Firmware::connect(void) {
   // flush both directions if desired after applying settings
   tcflush(serialPort_, TCIOFLUSH);
 
-  meterLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
-                     MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
-                     cfg_.baud);
+  firmwareLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
+                        MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
+                        cfg_.baud);
+
+  // Calculate inter character delay
+  int bitsPerChar = 1 + cfg_.dataBits + cfg_.stopBits;
+  if (cfg_.parity != MeterTypes::Parity::None) {
+    bitsPerChar++; // Add parity bit
+  }
+  charTransmissionTime_ = static_cast<int>((bitsPerChar * 1e6) / cfg_.baud);
+  firmwareLogger_->trace("Inter character delay {} µs", charTransmissionTime_);
 
   return {};
+}
+
+std::expected<void, MeterError>
+Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
+                      uint8_t b3, uint8_t b4, uint8_t b5) {
+
+  txBuffer_[0] = static_cast<uint8_t>(cmd);
+  txBuffer_[1] = b1;
+  txBuffer_[2] = b2;
+  txBuffer_[3] = b3;
+  txBuffer_[4] = b4;
+  txBuffer_[5] = b5;
+
+  uint16_t crc = FirmwareUtils::crc16(txBuffer_.data(), 6);
+  txBuffer_[6] = FirmwareUtils::lowByte(crc);
+  txBuffer_[7] = FirmwareUtils::highByte(crc);
+
+  // Flush any stale data
+  tcflush(serialPort_, TCIFLUSH);
+
+  auto writeResult = writeBytes(txBuffer_.data(), txBuffer_.size());
+  if (!writeResult)
+    return std::unexpected(writeResult.error());
+  firmwareLogger_->trace("Sent bytes {}", FirmwareUtils::logBuffer(txBuffer_));
+
+  auto readResult = readBytes(rxBuffer_.data(), rxBuffer_.size());
+  if (!readResult)
+    return std::unexpected(readResult.error());
+  firmwareLogger_->trace("Received bytes {}",
+                         FirmwareUtils::logBuffer(rxBuffer_));
+
+  uint16_t receivedCrc = FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]);
+  uint16_t calculatedCrc = FirmwareUtils::crc16(rxBuffer_.data(), 5);
+
+  if (receivedCrc != calculatedCrc) {
+    return std::unexpected(MeterError::custom(
+        EPROTO, "Invalid CRC checksum: received 0x{:04X}, expected 0x{:04X}",
+        receivedCrc, calculatedCrc));
+  }
+
+  if (rxBuffer_[0]) {
+    return std::unexpected(MeterError::custom(
+        EPROTO, "Command failed: {} (0x{:02X})",
+        FirmwareTypes::statusToString(
+            static_cast<FirmwareTypes::Status>(rxBuffer_[0])),
+        rxBuffer_[0]));
+  }
+
+  return {};
+}
+
+std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
+                                                   const int &length) {
+  // Check validity
+  if (serialPort_ < 0 || fcntl(serialPort_, F_GETFD) == -1) {
+    return std::unexpected(MeterError::fromErrno(
+        "readBytes(): Serial port not open or already closed"));
+  }
+
+  // Blocking read with timeout configured in termios
+  int bytesReceived = read(serialPort_, buffer, length);
+
+  if (bytesReceived < 0) {
+    return std::unexpected(MeterError::fromErrno("read() failed"));
+  }
+
+  if (bytesReceived < length) {
+    return std::unexpected(
+        MeterError::custom(ETIMEDOUT, "Timeout: expected {} bytes, got {}",
+                           length, bytesReceived));
+  }
+
+  return bytesReceived;
+}
+
+std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
+                                                    const int &length) {
+
+  // Check validity before using
+  if (serialPort_ < 0 || fcntl(serialPort_, F_GETFD) == -1) {
+    return std::unexpected(MeterError::fromErrno(
+        "writeBytes(): Serial port not open or already closed"));
+  }
+
+  int bytesSent = write(serialPort_, buffer, length);
+  if (bytesSent < 0) {
+    return std::unexpected(MeterError::fromErrno("write() failed"));
+  }
+  tcdrain(serialPort_);
+
+  return bytesSent;
+}
+
+std::expected<float, MeterError>
+Firmware::readDspValue(const FirmwareTypes::DspValue &type) {
+
+  auto dsp = sendCommand(FirmwareTypes::Command::MeasureRequestDsp,
+                         static_cast<uint8_t>(type), 0, 0, 0, 0);
+  if (!dsp)
+    return std::unexpected(dsp.error());
+
+  float value = FirmwareUtils::bytesToFloat(rxBuffer_[1], rxBuffer_[2],
+                                            rxBuffer_[3], rxBuffer_[4]);
+  return value / 100.0f;
 }
 
 std::expected<float, MeterError> Firmware::getVolume(void) {

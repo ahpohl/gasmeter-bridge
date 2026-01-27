@@ -15,6 +15,7 @@ public:
   virtual ~Firmware();
 
   std::expected<void, MeterError> connect(void);
+  void disconnect(void);
   std::expected<void, MeterError> setThresholdLevels(const int &low,
                                                      const int &high);
   std::expected<void, MeterError> setVolume(const float &volume);
@@ -29,13 +30,15 @@ private:
   int serialPort_{-1};
   const MeterConfig &cfg_;
   SignalHandler &handler_;
-  std::shared_ptr<spdlog::logger> meterLogger_;
+  std::shared_ptr<spdlog::logger> firmwareLogger_;
   std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
   std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
+  int charTransmissionTime_{0};
 
-  std::expected<void, MeterError> send(FirmwareTypes::Command cmd, uint8_t b1,
-                                       uint8_t b2, uint8_t b3, uint8_t b4,
-                                       uint8_t b5);
+  std::expected<void, MeterError> sendCommand(FirmwareTypes::Command cmd,
+                                              uint8_t b1, uint8_t b2,
+                                              uint8_t b3, uint8_t b4,
+                                              uint8_t b5);
 
   std::expected<int, MeterError> writeBytes(uint8_t const *buffer,
                                             const int &length);
