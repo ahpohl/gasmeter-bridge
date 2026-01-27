@@ -14,6 +14,7 @@
 #include <spdlog/logger.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <termios.h>
 
 Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler,
@@ -174,45 +175,39 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
 
 std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
                                                    const int &length) {
-  // Check validity
   if (serialPort_ < 0 || fcntl(serialPort_, F_GETFD) == -1) {
     return std::unexpected(MeterError::fromErrno(
         "readBytes(): Serial port not open or already closed"));
   }
 
-  // initialize read buffer
-  rxBuffer_.fill(0);
-  int iterations = 0;
-  const int maxIterations = 500;
+  int totalReceived = 0;
 
-  while (iterations < maxIterations) {
-    int bytesAvailable;
-    int rc = ioctl(serialPort_, FIONREAD, &bytesAvailable);
-    if (rc < 0)
-      return std::unexpected(MeterError::fromErrno("FIONREAD ioctl failed"));
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    if (bytesAvailable >= length)
-      break;
-    iterations++;
+  while (totalReceived < length) {
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(serialPort_, &readfds);
+
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+
+    int ret = select(serialPort_ + 1, &readfds, NULL, NULL, &timeout);
+    if (ret < 0)
+      return std::unexpected(MeterError::fromErrno("select() failed"));
+    if (ret == 0)
+      return std::unexpected(
+          MeterError::custom(ETIMEDOUT, "Timeout: expected {} bytes, got {}",
+                             length, totalReceived));
+
+    int bytesReceived =
+        read(serialPort_, buffer + totalReceived, length - totalReceived);
+    if (bytesReceived < 0)
+      return std::unexpected(MeterError::fromErrno("read() failed"));
+
+    totalReceived += bytesReceived;
   }
 
-  if (iterations == maxIterations) {
-    return std::unexpected(
-        MeterError::custom(ETIMEDOUT, "Timeout, meter did not respond"));
-  }
-
-  int bytesReceived = read(serialPort_, buffer, length);
-  if (bytesReceived < 0) {
-    return std::unexpected(MeterError::fromErrno("read() failed"));
-  }
-
-  if (bytesReceived < length) {
-    return std::unexpected(
-        MeterError::custom(ETIMEDOUT, "Timeout: expected {} bytes, got {}",
-                           length, bytesReceived));
-  }
-
-  return bytesReceived;
+  return totalReceived;
 }
 
 std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
@@ -236,7 +231,7 @@ std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
 std::expected<float, MeterError>
 Firmware::readDspValue(const FirmwareTypes::DspValue &measurement) {
 
-  auto cmdResult = sendCommand(FirmwareTypes::Command::CommandNotImplemented,
+  auto cmdResult = sendCommand(FirmwareTypes::Command::MeasureRequestDsp,
                                static_cast<uint8_t>(measurement), 0, 0, 0, 0);
   if (!cmdResult)
     return std::unexpected(cmdResult.error());
