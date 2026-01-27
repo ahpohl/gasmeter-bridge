@@ -46,7 +46,8 @@ struct FirmwareTypes {
     ClearMeterVolume = 1,
     SetMeterVolume = 2,
     SetThresholds = 3,
-    MeasureRequestDsp = 4
+    MeasureRequestDsp = 4,
+    CommandNotImplemented = 99
   };
 
   enum class DspValue : unsigned char { GasVolume = 1, RawIr = 2 };

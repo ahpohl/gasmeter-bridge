@@ -14,13 +14,9 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
-Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler)
-    : cfg_(cfg), handler_(signalHandler) {
-
-  firmwareLogger_ = spdlog::get("firmware");
-  if (!firmwareLogger_)
-    firmwareLogger_ = spdlog::default_logger();
-}
+Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler,
+                   std::shared_ptr<spdlog::logger> logger)
+    : cfg_(cfg), handler_(signalHandler), logger_(logger) {}
 
 Firmware::~Firmware(void) { disconnect(); }
 
@@ -28,9 +24,9 @@ void Firmware::disconnect(void) {
   if (serialPort_ != -1) {
     close(serialPort_);
     serialPort_ = -1;
-  }
 
-  firmwareLogger_->info("Meter disconnected");
+    logger_->info("Meter disconnected");
+  }
 }
 
 std::expected<void, MeterError> Firmware::connect(void) {
@@ -141,17 +137,9 @@ std::expected<void, MeterError> Firmware::connect(void) {
   // flush both directions if desired after applying settings
   tcflush(serialPort_, TCIOFLUSH);
 
-  firmwareLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
-                        MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
-                        cfg_.baud);
-
-  // Calculate inter character delay
-  int bitsPerChar = 1 + cfg_.dataBits + cfg_.stopBits;
-  if (cfg_.parity != MeterTypes::Parity::None) {
-    bitsPerChar++; // Add parity bit
-  }
-  charTransmissionTime_ = static_cast<int>((bitsPerChar * 1e6) / cfg_.baud);
-  firmwareLogger_->trace("Inter character delay {} µs", charTransmissionTime_);
+  logger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
+                MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
+                cfg_.baud);
 
   return {};
 }
@@ -177,13 +165,12 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
   auto writeResult = writeBytes(txBuffer_.data(), txBuffer_.size());
   if (!writeResult)
     return std::unexpected(writeResult.error());
-  firmwareLogger_->trace("Sent bytes {}", FirmwareUtils::logBuffer(txBuffer_));
+  logger_->trace("Sent bytes {}", FirmwareUtils::logBuffer(txBuffer_));
 
   auto readResult = readBytes(rxBuffer_.data(), rxBuffer_.size());
   if (!readResult)
     return std::unexpected(readResult.error());
-  firmwareLogger_->trace("Received bytes {}",
-                         FirmwareUtils::logBuffer(rxBuffer_));
+  logger_->trace("Received bytes {}", FirmwareUtils::logBuffer(rxBuffer_));
 
   uint16_t receivedCrc = FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]);
   uint16_t calculatedCrc = FirmwareUtils::crc16(rxBuffer_.data(), 5);
@@ -250,7 +237,7 @@ std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
 std::expected<float, MeterError>
 Firmware::readDspValue(const FirmwareTypes::DspValue &type) {
 
-  auto dsp = sendCommand(FirmwareTypes::Command::MeasureRequestDsp,
+  auto dsp = sendCommand(FirmwareTypes::Command::CommandNotImplemented,
                          static_cast<uint8_t>(type), 0, 0, 0, 0);
   if (!dsp)
     return std::unexpected(dsp.error());

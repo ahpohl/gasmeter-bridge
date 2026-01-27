@@ -44,7 +44,6 @@ private:
   MeterTypes::Device device_;
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
-  std::shared_ptr<spdlog::logger> meterLogger_;
   Firmware firmware_;
   float previousVolume_{0};
 
@@ -56,6 +55,13 @@ private:
   mutable std::mutex cbMutex_;
   std::condition_variable cv_;
   std::thread worker_;
+
+  // --- logger ---
+  std::shared_ptr<spdlog::logger> meterLogger_;
+  static std::shared_ptr<spdlog::logger> getLogger() {
+    auto logger = spdlog::get("meter");
+    return logger ? logger : spdlog::default_logger();
+  }
 };
 
 #endif /* METER_H_ */

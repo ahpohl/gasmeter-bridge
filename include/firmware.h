@@ -11,11 +11,13 @@
 
 class Firmware {
 public:
-  explicit Firmware(const MeterConfig &cfg, SignalHandler &signalHandler);
+  explicit Firmware(const MeterConfig &cfg, SignalHandler &signalHandler,
+                    std::shared_ptr<spdlog::logger> logger);
   virtual ~Firmware();
 
   std::expected<void, MeterError> connect(void);
   void disconnect(void);
+
   std::expected<void, MeterError> setThresholdLevels(const int &low,
                                                      const int &high);
   std::expected<void, MeterError> setVolume(const float &volume);
@@ -24,16 +26,14 @@ public:
 
   static constexpr int SEND_BUFFER_SIZE = 8;
   static constexpr int RECEIVE_BUFFER_SIZE = 7;
-  static constexpr int BUFFER_SIZE = 64;
 
 private:
   int serialPort_{-1};
   const MeterConfig &cfg_;
   SignalHandler &handler_;
-  std::shared_ptr<spdlog::logger> firmwareLogger_;
+  std::shared_ptr<spdlog::logger> logger_;
   std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
   std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
-  int charTransmissionTime_{0};
 
   std::expected<void, MeterError> sendCommand(FirmwareTypes::Command cmd,
                                               uint8_t b1, uint8_t b2,

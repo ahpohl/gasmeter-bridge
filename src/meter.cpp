@@ -17,11 +17,8 @@
 using json = nlohmann::ordered_json;
 
 Meter::Meter(const MeterConfig &cfg, SignalHandler &signalHandler)
-    : cfg_(cfg), handler_(signalHandler), firmware_(cfg, signalHandler) {
-
-  meterLogger_ = spdlog::get("meter");
-  if (!meterLogger_)
-    meterLogger_ = spdlog::default_logger();
+    : cfg_(cfg), handler_(signalHandler), meterLogger_(getLogger()),
+      firmware_(cfg, signalHandler, getLogger()) {
 
   // Start update loop thread
   worker_ = std::thread(&Meter::runLoop, this);
