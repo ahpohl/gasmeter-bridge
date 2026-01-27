@@ -37,8 +37,7 @@ struct MeterTypes {
     std::string manufacturer;
     std::string model;
     std::string serialNumber;
-    std::string fwVersion;
-    std::string gwVersion;
+    std::string firmwareVersion;
   };
 
   enum class ErrorAction { NONE, RECONNECT, SHUTDOWN };

@@ -45,6 +45,8 @@ private:
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
   std::shared_ptr<spdlog::logger> meterLogger_;
+  Firmware firmware_;
+  float previousVolume_{0};
 
   // --- threading / callbacks ---
   std::function<void(std::string, MeterTypes::Values)> updateCallback_;

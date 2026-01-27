@@ -15,7 +15,7 @@ meter:
   update_interval: 60
 
 mqtt:
-  broker: localhost
+  broker: geapoh.home.arpa
   port: 1883
   topic: gasmeter-bridge
   #user: mqtt
@@ -30,5 +30,5 @@ logger:
   level: info     # global default: off | error | warn | info | debug | trace
   modules:
     main: info
-    meter: info
+    meter: trace
     mqtt: info

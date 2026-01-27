@@ -17,7 +17,7 @@
 using json = nlohmann::ordered_json;
 
 Meter::Meter(const MeterConfig &cfg, SignalHandler &signalHandler)
-    : cfg_(cfg), handler_(signalHandler) {
+    : cfg_(cfg), handler_(signalHandler), firmware_(cfg, signalHandler) {
 
   meterLogger_ = spdlog::get("meter");
   if (!meterLogger_)
@@ -99,9 +99,14 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch())
                     .count();
-
-  // values.volume = get volume
-  // values.flow = get flow state
+  try {
+    values.volume = MeterError::getOrThrow(firmware_.getVolume());
+  } catch (const MeterError &err) {
+    meterLogger_->warn("{}", err.message);
+    return std::unexpected(err);
+  }
+  values.flow = ((values.volume - previousVolume_) > 0) ? true : false;
+  previousVolume_ = values.volume;
 
   json newJson;
   json phases = json::array();
@@ -130,11 +135,11 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
 
   MeterTypes::Device newDevice{};
 
-  newDevice.manufacturer = "Gasmeter";
-  newDevice.model = "model";
-  newDevice.gwVersion = std::string(PROJECT_VERSION) + "-" + GIT_COMMIT_HASH;
-  newDevice.fwVersion = "firmware";
-  newDevice.serialNumber = "123456";
+  newDevice.manufacturer = "Pipersberg";
+  newDevice.model = "G4 RF1c";
+  newDevice.firmwareVersion =
+      std::string(PROJECT_VERSION) + "-" + GIT_COMMIT_HASH;
+  newDevice.serialNumber = "42010646";
 
   // ---- Build ordered JSON ----
   json newJson;
@@ -142,8 +147,7 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
   newJson["manufacturer"] = newDevice.manufacturer;
   newJson["model"] = newDevice.model;
   newJson["serial_number"] = newDevice.serialNumber;
-  newJson["firmware_version"] = newDevice.fwVersion;
-  newJson["gateway_version"] = newDevice.gwVersion;
+  newJson["firmware_version"] = newDevice.firmwareVersion;
 
   meterLogger_->debug("{}", newJson.dump());
 
@@ -163,7 +167,7 @@ void Meter::runLoop() {
   while (handler_.isRunning()) {
 
     // Connect to meter
-    auto connectAction = handleResult(tryConnect());
+    auto connectAction = handleResult(firmware_.connect());
     if (connectAction == MeterTypes::ErrorAction::SHUTDOWN)
       break;
 
@@ -175,10 +179,6 @@ void Meter::runLoop() {
       }
       continue;
     }
-
-    meterLogger_->info("Meter connected ({}{}{}, {} baud)", cfg_.dataBits,
-                       MeterTypes::parityToChar(cfg_.parity), cfg_.stopBits,
-                       cfg_.baud);
 
     if (availabilityCallback_)
       availabilityCallback_("connected");

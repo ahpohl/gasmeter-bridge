@@ -14,12 +14,12 @@ public:
   explicit Firmware(const MeterConfig &cfg, SignalHandler &signalHandler);
   virtual ~Firmware();
 
+  std::expected<void, MeterError> connect(void);
   std::expected<void, MeterError> setThresholdLevels(const int &low,
                                                      const int &high);
   std::expected<void, MeterError> setVolume(const float &volume);
   std::expected<void, MeterError> clearVolume(void);
   std::expected<float, MeterError> getVolume(void);
-  double getFlow(void);
 
   static constexpr int SEND_BUFFER_SIZE = 8;
   static constexpr int RECEIVE_BUFFER_SIZE = 7;
@@ -33,7 +33,6 @@ private:
   std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
   std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
 
-  std::expected<void, MeterError> connect(void);
   std::expected<void, MeterError> send(FirmwareTypes::Command cmd, uint8_t b1,
                                        uint8_t b2, uint8_t b3, uint8_t b4,
                                        uint8_t b5);
