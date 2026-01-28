@@ -116,6 +116,7 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
     auto setResult = firmware_.setVolume(cfg_.gas.initial);
     if (!setResult)
       return std::unexpected(setResult.error());
+    values.volume = cfg_.gas.initial;
   }
 
   if (previousVolume_.has_value())
@@ -126,7 +127,7 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   json phases = json::array();
 
   newJson["time"] = values.time;
-  newJson["volume"] = JsonUtils::roundTo(values.volume, 6);
+  newJson["volume"] = JsonUtils::roundTo(values.volume, 2);
   newJson["flow"] = values.flow;
 
   // Update shared values and JSON with lock
@@ -151,7 +152,7 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
 
   newDevice.manufacturer = "Pipersberg";
   newDevice.model = "G4 RF1c";
-  newDevice.firmwareVersion =
+  newDevice.bridgeVersion =
       std::string(PROJECT_VERSION) + "-" + GIT_COMMIT_HASH;
   newDevice.serialNumber = "42010646";
 
@@ -161,7 +162,7 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
   newJson["manufacturer"] = newDevice.manufacturer;
   newJson["model"] = newDevice.model;
   newJson["serial_number"] = newDevice.serialNumber;
-  newJson["firmware_version"] = newDevice.firmwareVersion;
+  newJson["bridge_version"] = newDevice.bridgeVersion;
 
   meterLogger_->debug("{}", newJson.dump());
 

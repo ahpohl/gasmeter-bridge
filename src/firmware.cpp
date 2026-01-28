@@ -6,11 +6,10 @@
 #include "signal_handler.h"
 #include <asm-generic/ioctls.h>
 #include <cerrno>
-#include <condition_variable>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <fcntl.h>
-#include <mutex>
 #include <spdlog/logger.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
@@ -140,6 +139,8 @@ std::expected<void, MeterError>
 Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
                       uint8_t b3, uint8_t b4, uint8_t b5) {
 
+  auto replyStart = std::chrono::steady_clock::now();
+
   txBuffer_[0] = static_cast<uint8_t>(cmd);
   txBuffer_[1] = b1;
   txBuffer_[2] = b2;
@@ -180,11 +181,17 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
         rxBuffer_[0]));
   }
 
+  if (logger_->level() == spdlog::level::trace) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - replyStart);
+    logger_->trace("Send command took {} ms", elapsed.count());
+  }
+
   return {};
 }
 
 std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
-                                                   const int &length) {
+                                                   int length) {
   if (serialPort_ < 0 || fcntl(serialPort_, F_GETFD) == -1) {
     return std::unexpected(MeterError::fromErrno(
         "readBytes(): Serial port not open or already closed"));
@@ -222,7 +229,7 @@ std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
 }
 
 std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
-                                                    const int &length) {
+                                                    int length) {
 
   // Check validity before using
   if (serialPort_ < 0 || fcntl(serialPort_, F_GETFD) == -1) {
@@ -239,28 +246,27 @@ std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
   return bytesSent;
 }
 
-std::expected<float, MeterError>
-Firmware::readDspValue(const FirmwareTypes::DspValue &measurement) {
+std::expected<double, MeterError>
+Firmware::readDspValue(FirmwareTypes::DspValue measurement) {
 
   auto cmdResult = sendCommand(FirmwareTypes::Command::MeasureRequestDsp,
                                static_cast<uint8_t>(measurement), 0, 0, 0, 0);
   if (!cmdResult)
     return std::unexpected(cmdResult.error());
 
-  float value = FirmwareUtils::bytesToFloat(rxBuffer_[1], rxBuffer_[2],
-                                            rxBuffer_[3], rxBuffer_[4]);
-  return value / 100.0f;
+  return FirmwareUtils::bytesToDouble(rxBuffer_[1], rxBuffer_[2], rxBuffer_[3],
+                                      rxBuffer_[4]);
 }
 
-std::expected<float, MeterError> Firmware::getVolume(void) {
+std::expected<double, MeterError> Firmware::getVolume(void) {
   auto vol = readDspValue(FirmwareTypes::DspValue::Volume);
   if (!vol)
     return std::unexpected(vol.error());
   return vol;
 }
 
-std::expected<void, MeterError> Firmware::setVolume(float volume) {
-  std::array b = FirmwareUtils::floatToBytes(volume);
+std::expected<void, MeterError> Firmware::setVolume(double volume) {
+  std::array b = FirmwareUtils::doubleToBytes(volume);
   auto cmdResult = sendCommand(FirmwareTypes::Command::SetMeterVolume, 0, b[0],
                                b[1], b[2], b[3]);
   if (!cmdResult)

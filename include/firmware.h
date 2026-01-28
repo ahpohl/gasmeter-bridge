@@ -19,8 +19,8 @@ public:
 
   std::expected<void, MeterError> connect(void);
   void disconnect(void);
-  std::expected<float, MeterError> getVolume(void);
-  std::expected<void, MeterError> setVolume(float volume);
+  std::expected<double, MeterError> getVolume(void);
+  std::expected<void, MeterError> setVolume(double volume);
   std::expected<void, MeterError> clearVolume(void);
   std::expected<void, MeterError> setThresholdLevels(int16_t low, int16_t high);
 
@@ -42,12 +42,11 @@ private:
                                               uint8_t b3, uint8_t b4,
                                               uint8_t b5);
 
-  std::expected<int, MeterError> writeBytes(uint8_t const *buffer,
-                                            const int &length);
-  std::expected<int, MeterError> readBytes(uint8_t *buffer, const int &length);
+  std::expected<int, MeterError> writeBytes(uint8_t const *buffer, int length);
+  std::expected<int, MeterError> readBytes(uint8_t *buffer, int length);
 
-  std::expected<float, MeterError>
-  readDspValue(const FirmwareTypes::DspValue &measurement);
+  std::expected<double, MeterError>
+  readDspValue(FirmwareTypes::DspValue measurement);
 };
 
 #endif /* FIRMWARE_H */

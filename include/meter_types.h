@@ -10,7 +10,7 @@ struct MeterTypes {
   // --- Meter value types ---
   struct Values {
     uint64_t time{0};
-    uint64_t volume{0};
+    double volume{0};
     bool flow{false};
   };
 
@@ -19,6 +19,7 @@ struct MeterTypes {
     std::string model;
     std::string serialNumber;
     std::string firmwareVersion;
+    std::string bridgeVersion;
   };
 
   enum class ErrorAction { NONE, RECONNECT, SHUTDOWN };

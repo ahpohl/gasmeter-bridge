@@ -5,8 +5,8 @@ meter:
     high: 950
     calibration_log: /tmp/ir.log
   gas:
-    initial: 5356.38
-    reset: false
+    initial: 5356.49
+    reset: true
   update_interval: 60
 
 mqtt:
