@@ -31,7 +31,7 @@ private:
   int serialPort_{-1};
   const MeterConfig &cfg_;
   SignalHandler &handler_;
-  std::shared_ptr<spdlog::logger> logger_;
+  std::shared_ptr<spdlog::logger> firmwareLogger_;
   std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
   std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
   mutable std::mutex mtx_;

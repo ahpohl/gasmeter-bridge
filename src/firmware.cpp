@@ -18,7 +18,7 @@
 
 Firmware::Firmware(const MeterConfig &cfg, SignalHandler &signalHandler,
                    std::shared_ptr<spdlog::logger> logger)
-    : cfg_(cfg), handler_(signalHandler), logger_(logger) {}
+    : cfg_(cfg), handler_(signalHandler), firmwareLogger_(logger) {}
 
 Firmware::~Firmware(void) { disconnect(); }
 
@@ -27,7 +27,7 @@ void Firmware::disconnect(void) {
     close(serialPort_);
     serialPort_ = -1;
 
-    logger_->info("Meter disconnected");
+    firmwareLogger_->info("Meter disconnected");
   }
 }
 
@@ -114,7 +114,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   }
 
   // --- reset µC ---
-  logger_->debug("Resetting gasmeter µC...");
+  firmwareLogger_->debug("Resetting gasmeter µC...");
 
   int status;
   ioctl(serialPort_, TIOCMGET, &status);
@@ -130,7 +130,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   tcflush(serialPort_, TCIOFLUSH);
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-  logger_->info("Meter connected (8N1, {} baud)", baudSpeed);
+  firmwareLogger_->info("Meter connected (8N1, {} baud)", baudSpeed);
 
   return {};
 }
@@ -156,13 +156,14 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
   if (!writeResult)
     return std::unexpected(writeResult.error());
 
-  logger_->trace("Sent bytes  {}", FirmwareUtils::logBuffer(txBuffer_));
+  firmwareLogger_->trace("Sent bytes  {}", FirmwareUtils::logBuffer(txBuffer_));
 
   auto readResult = readBytes(rxBuffer_.data(), rxBuffer_.size());
   if (!readResult)
     return std::unexpected(readResult.error());
 
-  logger_->trace("Received bytes {}", FirmwareUtils::logBuffer(rxBuffer_));
+  firmwareLogger_->trace("Received bytes {}",
+                         FirmwareUtils::logBuffer(rxBuffer_));
 
   uint16_t receivedChecksum = FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]);
   uint16_t calculatedChecksum = FirmwareUtils::crc16(rxBuffer_.data(), 5);
@@ -181,11 +182,9 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
         rxBuffer_[0]));
   }
 
-  if (logger_->level() == spdlog::level::trace) {
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - replyStart);
-    logger_->trace("Send command took {} ms", elapsed.count());
-  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - replyStart);
+  firmwareLogger_->trace("Send command took {} ms", elapsed.count());
 
   return {};
 }

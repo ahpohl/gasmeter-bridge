@@ -104,6 +104,7 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
     if (!clearResult)
       return std::unexpected(clearResult.error());
     clearVolume_ = false;
+    meterLogger_->debug("Meter volume reset to zero");
   }
 
   try {
@@ -117,6 +118,7 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
     if (!setResult)
       return std::unexpected(setResult.error());
     values.volume = cfg_.gas.initial;
+    meterLogger_->info("Meter volume set to {} m³", cfg_.gas.initial);
   }
 
   if (previousVolume_.has_value())
