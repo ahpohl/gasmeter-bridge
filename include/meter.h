@@ -46,7 +46,7 @@ private:
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
   Firmware firmware_;
-  std::optional<float> previousVolume_;
+  std::optional<double> previousVolume_;
   bool clearVolume_{false};
 
   // --- threading / callbacks ---

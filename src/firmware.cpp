@@ -114,7 +114,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   }
 
   // --- reset µC ---
-  firmwareLogger_->debug("Resetting gasmeter µC...");
+  firmwareLogger_->debug("Resetting internal µC ...");
 
   int status;
   ioctl(serialPort_, TIOCMGET, &status);

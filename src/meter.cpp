@@ -8,7 +8,9 @@
 #include <asm-generic/ioctls.h>
 #include <chrono>
 #include <expected>
+#include <iomanip>
 #include <nlohmann/json.hpp>
+#include <sstream>
 #include <string>
 #include <sys/file.h>
 #include <sys/ioctl.h>
