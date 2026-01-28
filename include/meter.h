@@ -11,6 +11,7 @@
 #include <functional>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <spdlog/logger.h>
 #include <string>
 #include <thread>
@@ -45,7 +46,7 @@ private:
   nlohmann::ordered_json jsonValues_;
   nlohmann::json jsonDevice_;
   Firmware firmware_;
-  float previousVolume_{0};
+  std::optional<float> previousVolume_;
 
   // --- threading / callbacks ---
   std::function<void(std::string, MeterTypes::Values)> updateCallback_;

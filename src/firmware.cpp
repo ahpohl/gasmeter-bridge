@@ -82,7 +82,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   cfmakeraw(&serialPortSettings);
 
   // set baud (both directions)
-  speed_t baudSpeed = 9600;
+  speed_t baudSpeed = B19200;
   if (cfsetispeed(&serialPortSettings, baudSpeed) < 0 ||
       cfsetospeed(&serialPortSettings, baudSpeed) < 0) {
     int savedErrno = errno;
@@ -95,12 +95,16 @@ std::expected<void, MeterError> Firmware::connect(void) {
   // Base flags: enable receiver, ignore modem control lines
   serialPortSettings.c_cflag |= (CLOCAL | CREAD);
 
+  // Set 8N1 port configuration
+  serialPortSettings.c_cflag &= ~(CSIZE | PARENB | PARODD | CSTOPB | CRTSCTS);
+  serialPortSettings.c_cflag |= CS8;
+
   // Disable reset after modem hangup
   serialPortSettings.c_cflag &= ~HUPCL;
 
   // blocking read with timeout
   serialPortSettings.c_cc[VMIN] = 0;
-  serialPortSettings.c_cc[VTIME] = 1;
+  serialPortSettings.c_cc[VTIME] = 0;
 
   if (tcsetattr(serialPort_, TCSANOW, &serialPortSettings)) {
     int savedErrno = errno;
@@ -110,16 +114,24 @@ std::expected<void, MeterError> Firmware::connect(void) {
         MeterError::fromErrno("Failed to set serial port attributes"));
   }
 
+  // --- reset µC ---
+  logger_->debug("Resetting gasmeter µC...");
+
+  int status;
+  ioctl(serialPort_, TIOCMGET, &status);
+  status &= ~TIOCM_DTR; // Lower DTR
+  ioctl(serialPort_, TIOCMSET, &status);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+  status |= TIOCM_DTR; // Raise DTR
+  ioctl(serialPort_, TIOCMSET, &status);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
   // flush both directions if desired after applying settings
   tcflush(serialPort_, TCIOFLUSH);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
   logger_->info("Meter connected (8N1, {} baud)", baudSpeed);
-
-  {
-    std::unique_lock<std::mutex> lock(mtx_);
-    cv_.wait_for(lock, std::chrono::seconds(1),
-                 [this] { return !handler_.isRunning(); });
-  }
 
   return {};
 }
@@ -128,7 +140,6 @@ std::expected<void, MeterError>
 Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
                       uint8_t b3, uint8_t b4, uint8_t b5) {
 
-  txBuffer_.fill(0);
   txBuffer_[0] = static_cast<uint8_t>(cmd);
   txBuffer_[1] = b1;
   txBuffer_[2] = b2;
@@ -140,17 +151,16 @@ Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
   txBuffer_[6] = FirmwareUtils::lowByte(checksum);
   txBuffer_[7] = FirmwareUtils::highByte(checksum);
 
-  // Flush any stale data
-  tcflush(serialPort_, TCIFLUSH);
-
   auto writeResult = writeBytes(txBuffer_.data(), txBuffer_.size());
   if (!writeResult)
     return std::unexpected(writeResult.error());
-  logger_->trace("Sent bytes {}", FirmwareUtils::logBuffer(txBuffer_));
+
+  logger_->trace("Sent bytes  {}", FirmwareUtils::logBuffer(txBuffer_));
 
   auto readResult = readBytes(rxBuffer_.data(), rxBuffer_.size());
   if (!readResult)
     return std::unexpected(readResult.error());
+
   logger_->trace("Received bytes {}", FirmwareUtils::logBuffer(rxBuffer_));
 
   uint16_t receivedChecksum = FirmwareUtils::word(rxBuffer_[5], rxBuffer_[6]);
@@ -181,6 +191,7 @@ std::expected<int, MeterError> Firmware::readBytes(uint8_t *buffer,
   }
 
   int totalReceived = 0;
+  rxBuffer_.fill(0);
 
   while (totalReceived < length) {
     fd_set readfds;

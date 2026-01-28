@@ -101,7 +101,9 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   } catch (const MeterError &err) {
     return std::unexpected(err);
   }
-  values.flow = ((values.volume - previousVolume_) > 0) ? true : false;
+
+  if (previousVolume_.has_value())
+    values.flow = (values.volume > previousVolume_.value());
   previousVolume_ = values.volume;
 
   json newJson;
