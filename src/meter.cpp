@@ -20,6 +20,8 @@ Meter::Meter(const MeterConfig &cfg, SignalHandler &signalHandler)
     : cfg_(cfg), handler_(signalHandler), meterLogger_(getLogger()),
       firmware_(cfg, signalHandler, getLogger()) {
 
+  clearVolume_ = cfg_.gas.reset;
+
   // Start update loop thread
   worker_ = std::thread(&Meter::runLoop, this);
 }
@@ -96,10 +98,24 @@ std::expected<void, MeterError> Meter::updateValuesAndJson() {
   values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch())
                     .count();
+
+  if (clearVolume_) {
+    auto clearResult = firmware_.clearVolume();
+    if (!clearResult)
+      return std::unexpected(clearResult.error());
+    clearVolume_ = false;
+  }
+
   try {
     values.volume = MeterError::getOrThrow(firmware_.getVolume());
   } catch (const MeterError &err) {
     return std::unexpected(err);
+  }
+
+  if (values.volume < cfg_.gas.initial) {
+    auto setResult = firmware_.setVolume(cfg_.gas.initial);
+    if (!setResult)
+      return std::unexpected(setResult.error());
   }
 
   if (previousVolume_.has_value())

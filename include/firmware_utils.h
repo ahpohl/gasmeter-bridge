@@ -62,7 +62,19 @@ inline float bytesToFloat(const uint8_t &b1, const uint8_t &b2,
   int32_t valueInt =
       static_cast<int32_t>(b1) | (static_cast<int32_t>(b2) << 8) |
       (static_cast<int32_t>(b3) << 16) | (static_cast<int32_t>(b4) << 24);
+
   return static_cast<float>(valueInt);
+}
+
+inline std::array<uint8_t, 4> floatToBytes(const float &val) {
+  std::array<uint8_t, 4> bytes{};
+  int32_t valueInt = static_cast<int32_t>(val * 100.0f);
+  bytes[0] = static_cast<uint8_t>((valueInt >> 0) & 0xFF);
+  bytes[1] = static_cast<uint8_t>((valueInt >> 8) & 0xFF);
+  bytes[2] = static_cast<uint8_t>((valueInt >> 16) & 0xFF);
+  bytes[3] = static_cast<uint8_t>((valueInt >> 24) & 0xFF);
+
+  return bytes;
 }
 
 } // namespace FirmwareUtils

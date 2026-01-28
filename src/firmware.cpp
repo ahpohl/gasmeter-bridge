@@ -102,7 +102,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   // Disable reset after modem hangup
   serialPortSettings.c_cflag &= ~HUPCL;
 
-  // blocking read with timeout
+  // non-blocking read
   serialPortSettings.c_cc[VMIN] = 0;
   serialPortSettings.c_cc[VTIME] = 0;
 
@@ -127,7 +127,7 @@ std::expected<void, MeterError> Firmware::connect(void) {
   ioctl(serialPort_, TIOCMSET, &status);
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-  // flush both directions if desired after applying settings
+  // flush both directions after applying settings
   tcflush(serialPort_, TCIOFLUSH);
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
@@ -257,4 +257,39 @@ std::expected<float, MeterError> Firmware::getVolume(void) {
   if (!vol)
     return std::unexpected(vol.error());
   return vol;
+}
+
+std::expected<void, MeterError> Firmware::setVolume(float volume) {
+  std::array b = FirmwareUtils::floatToBytes(volume);
+  auto cmdResult = sendCommand(FirmwareTypes::Command::SetMeterVolume, 0, b[0],
+                               b[1], b[2], b[3]);
+  if (!cmdResult)
+    return std::unexpected(cmdResult.error());
+
+  return {};
+}
+
+std::expected<void, MeterError> Firmware::clearVolume(void) {
+  auto cmdResult =
+      sendCommand(FirmwareTypes::Command::ClearMeterVolume, 0, 0, 0, 0, 0);
+  if (!cmdResult)
+    return std::unexpected(cmdResult.error());
+
+  return {};
+}
+
+std::expected<void, MeterError> Firmware::setThresholdLevels(int16_t low,
+                                                             int16_t high) {
+  std::array<uint8_t, 2> l{static_cast<uint8_t>(low & 0xFF),
+                           static_cast<uint8_t>((low >> 8) & 0xFF)};
+
+  std::array<uint8_t, 2> h{static_cast<uint8_t>(high & 0xFF),
+                           static_cast<uint8_t>((high >> 8) & 0xFF)};
+
+  auto cmdResult = sendCommand(FirmwareTypes::Command::ClearMeterVolume, 0,
+                               l[0], l[1], h[0], h[1]);
+  if (!cmdResult)
+    return std::unexpected(cmdResult.error());
+
+  return {};
 }

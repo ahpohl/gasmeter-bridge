@@ -19,11 +19,10 @@ public:
 
   std::expected<void, MeterError> connect(void);
   void disconnect(void);
-  std::expected<void, MeterError> setThresholdLevels(const int &low,
-                                                     const int &high);
-  std::expected<void, MeterError> setVolume(const float &volume);
   std::expected<float, MeterError> getVolume(void);
+  std::expected<void, MeterError> setVolume(float volume);
   std::expected<void, MeterError> clearVolume(void);
+  std::expected<void, MeterError> setThresholdLevels(int16_t low, int16_t high);
 
   static constexpr int SEND_BUFFER_SIZE = 8;
   static constexpr int RECEIVE_BUFFER_SIZE = 7;

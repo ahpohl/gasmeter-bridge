@@ -47,6 +47,7 @@ private:
   nlohmann::json jsonDevice_;
   Firmware firmware_;
   std::optional<float> previousVolume_;
+  bool clearVolume_{false};
 
   // --- threading / callbacks ---
   std::function<void(std::string, MeterTypes::Values)> updateCallback_;
