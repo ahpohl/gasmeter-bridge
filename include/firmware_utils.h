@@ -34,15 +34,13 @@ inline uint16_t crc16(const uint8_t *packet, size_t length) {
   return crc;
 }
 
-inline uint8_t lowByte(const uint16_t &bytes) {
-  return static_cast<uint8_t>(bytes);
-}
+inline uint8_t lowByte(uint16_t bytes) { return static_cast<uint8_t>(bytes); }
 
-inline uint8_t highByte(const uint16_t &bytes) {
+inline uint8_t highByte(uint16_t bytes) {
   return static_cast<uint8_t>((bytes >> 8) & 0xFF);
 }
 
-inline uint16_t word(const uint8_t &msb, const uint8_t &lsb) {
+inline uint16_t word(uint8_t msb, uint8_t lsb) {
   return ((msb & 0xFF) << 8) | lsb;
 }
 

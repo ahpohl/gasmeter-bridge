@@ -8,7 +8,9 @@
 #include <array>
 #include <condition_variable>
 #include <cstdint>
+#include <future>
 #include <mutex>
+#include <queue>
 #include <spdlog/logger.h>
 
 class Firmware {
@@ -28,22 +30,43 @@ public:
   static constexpr int RECEIVE_BUFFER_SIZE = 7;
 
 private:
+  // Command structure for queue
+  struct SerialCommand {
+    FirmwareTypes::Command cmd;
+    std::array<uint8_t, 5> params;
+    std::promise<
+        std::expected<std::array<uint8_t, RECEIVE_BUFFER_SIZE>, MeterError>>
+        promise;
+  };
+
+  // Configuration and state
   int serialPort_{-1};
   const MeterConfig &cfg_;
   SignalHandler &handler_;
   std::shared_ptr<spdlog::logger> firmwareLogger_;
-  std::array<uint8_t, SEND_BUFFER_SIZE> txBuffer_;
-  std::array<uint8_t, RECEIVE_BUFFER_SIZE> rxBuffer_;
-  mutable std::mutex mtx_;
-  std::condition_variable cv_;
 
-  std::expected<void, MeterError> sendCommand(FirmwareTypes::Command cmd,
-                                              uint8_t b1, uint8_t b2,
-                                              uint8_t b3, uint8_t b4,
-                                              uint8_t b5);
+  // Serial worker thread
+  std::thread serialWorker_;
+  bool workerRunning_{false};
 
-  std::expected<int, MeterError> writeBytes(uint8_t const *buffer, int length);
+  // Command queue (thread-safe)
+  std::queue<std::shared_ptr<SerialCommand>> commandQueue_;
+  std::mutex queueMutex_;
+  std::condition_variable queueCV_;
+
+  // Worker thread methods
+  void serialWorkerLoop();
+  std::expected<std::array<uint8_t, RECEIVE_BUFFER_SIZE>, MeterError>
+  processCommand(const SerialCommand &cmd);
+
+  // Low-level serial I/O (called only from worker thread)
+  std::expected<int, MeterError> writeBytes(const uint8_t *buffer, int length);
   std::expected<int, MeterError> readBytes(uint8_t *buffer, int length);
+
+  // Command submission (thread-safe)
+  std::expected<std::array<uint8_t, RECEIVE_BUFFER_SIZE>, MeterError>
+  sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2, uint8_t b3,
+              uint8_t b4, uint8_t b5);
 
   std::expected<double, MeterError>
   readDspValue(FirmwareTypes::DspValue measurement);
