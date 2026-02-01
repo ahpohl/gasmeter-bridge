@@ -325,11 +325,10 @@ std::expected<int, MeterError> Firmware::writeBytes(uint8_t const *buffer,
   return bytesSent;
 }
 
-std::expected<double, MeterError>
-Firmware::readDspValue(FirmwareTypes::DspValue measurement) {
-
-  auto cmdResult = sendCommand(FirmwareTypes::Command::MeasureRequestDsp,
-                               static_cast<uint8_t>(measurement), 0, 0, 0, 0);
+std::expected<double, MeterError> Firmware::getVolume(void) {
+  auto cmdResult = sendCommand(
+      FirmwareTypes::Command::MeasureRequestDsp,
+      static_cast<uint8_t>(FirmwareTypes::DspValue::Volume), 0, 0, 0, 0);
   if (!cmdResult)
     return std::unexpected(cmdResult.error());
 
@@ -338,13 +337,6 @@ Firmware::readDspValue(FirmwareTypes::DspValue measurement) {
 
   return FirmwareUtils::bytesToDouble(rxBuffer[1], rxBuffer[2], rxBuffer[3],
                                       rxBuffer[4]);
-}
-
-std::expected<double, MeterError> Firmware::getVolume(void) {
-  auto vol = readDspValue(FirmwareTypes::DspValue::Volume);
-  if (!vol)
-    return std::unexpected(vol.error());
-  return vol;
 }
 
 std::expected<void, MeterError> Firmware::setVolume(double volume) {

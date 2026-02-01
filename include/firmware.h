@@ -69,9 +69,6 @@ private:
   std::expected<std::array<uint8_t, RECEIVE_BUFFER_SIZE>, MeterError>
   sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2, uint8_t b3,
               uint8_t b4, uint8_t b5);
-
-  std::expected<double, MeterError>
-  readDspValue(FirmwareTypes::DspValue measurement);
 };
 
 #endif /* FIRMWARE_H */

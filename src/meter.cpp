@@ -25,8 +25,21 @@ Meter::Meter(const MeterConfig &cfg, SignalHandler &signalHandler)
   // Start update loop thread
   worker_ = std::thread(&Meter::runLoop, this);
 
-  // Start raw IR loop thread (50ms interval)
-  rawIRWorker_ = std::thread(&Meter::rawIRLoop, this);
+  // Start raw IR loop only if calibration log is configured
+  if (cfg_.level.calibrationLog) {
+    irLogFile_.open(*cfg_.level.calibrationLog, std::ios::app);
+    if (!irLogFile_.is_open()) {
+      throw std::runtime_error("Failed to open calibration log: " +
+                               *cfg_.level.calibrationLog);
+
+    } else {
+      // Write header if file is empty (new file)
+      if (irLogFile_.tellp() == 0)
+        irLogFile_ << "time,raw_ir,volume\n";
+      rawIRWorker_ = std::thread(&Meter::rawIRLoop, this);
+      meterLogger_->info("Calibration log: {}", *cfg_.level.calibrationLog);
+    }
+  }
 }
 
 Meter::~Meter() {
@@ -166,8 +179,8 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
       firmware_.setThresholdLevels(cfg_.level.low, cfg_.level.high);
   if (!levelResult)
     return std::unexpected(levelResult.error());
-  meterLogger_->debug("Set IR threshold levels: low {}, high {}",
-                      cfg_.level.low, cfg_.level.high);
+  meterLogger_->debug("IR threshold levels set to {} and {}", cfg_.level.low,
+                      cfg_.level.high);
 
   MeterTypes::Device newDevice{};
 
@@ -205,20 +218,22 @@ std::expected<void, MeterError> Meter::updateRawIR() {
         MeterError::custom(EINTR, "updateRawIR(): Shutdown in progress"));
   }
 
-  MeterTypes::Values values{};
+  auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now());
+  std::chrono::zoned_time local{std::chrono::current_zone(), now};
 
-  values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch())
-                    .count();
+  double volume;
+  int rawIR;
 
   try {
-    values.volume = MeterError::getOrThrow(firmware_.getVolume());
-    values.rawIR = MeterError::getOrThrow(firmware_.getRawIR());
+    volume = MeterError::getOrThrow(firmware_.getVolume());
+    rawIR = MeterError::getOrThrow(firmware_.getRawIR());
   } catch (const MeterError &err) {
     return std::unexpected(err);
   }
 
-  meterLogger_->debug("Raw IR value: {}", values.rawIR);
+  irLogFile_ << std::format("{:%Y-%m-%dT%H:%M:%S}", local) << ',' << rawIR
+             << ',' << volume << '\n';
 
   return {};
 }

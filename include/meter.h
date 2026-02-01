@@ -8,6 +8,7 @@
 #include "signal_handler.h"
 #include <condition_variable>
 #include <expected>
+#include <fstream>
 #include <functional>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -50,6 +51,7 @@ private:
   Firmware firmware_;
   std::optional<double> previousVolume_;
   bool clearVolume_{false};
+  std::ofstream irLogFile_;
 
   // --- threading / callbacks ---
   std::function<void(std::string, MeterTypes::Values)> updateCallback_;
