@@ -12,6 +12,7 @@ struct MeterTypes {
     uint64_t time{0};
     double volume{0};
     bool flow{false};
+    int32_t rawIR{0};
   };
 
   struct Device {

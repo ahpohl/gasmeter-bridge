@@ -24,12 +24,20 @@ Meter::Meter(const MeterConfig &cfg, SignalHandler &signalHandler)
 
   // Start update loop thread
   worker_ = std::thread(&Meter::runLoop, this);
+
+  // Start raw IR loop thread (50ms interval)
+  rawIRWorker_ = std::thread(&Meter::rawIRLoop, this);
 }
 
 Meter::~Meter() {
   cv_.notify_all();
+
   if (worker_.joinable())
     worker_.join();
+
+  if (rawIRWorker_.joinable())
+    rawIRWorker_.join();
+
   disconnect();
 }
 
@@ -150,6 +158,17 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
         EINTR, "updateDeviceAndJson(): Shutdown in progress"));
   }
 
+  if (deviceUpdated_.load())
+    return {};
+
+  // Set low and high levels
+  auto levelResult =
+      firmware_.setThresholdLevels(cfg_.level.low, cfg_.level.high);
+  if (!levelResult)
+    return std::unexpected(levelResult.error());
+  meterLogger_->debug("Set IR threshold levels: low {}, high {}",
+                      cfg_.level.low, cfg_.level.high);
+
   MeterTypes::Device newDevice{};
 
   newDevice.manufacturer = "Pipersberg";
@@ -175,6 +194,32 @@ std::expected<void, MeterError> Meter::updateDeviceAndJson() {
     device_ = std::move(newDevice);
   }
 
+  deviceUpdated_.store(true);
+
+  return {};
+}
+
+std::expected<void, MeterError> Meter::updateRawIR() {
+  if (!handler_.isRunning()) {
+    return std::unexpected(
+        MeterError::custom(EINTR, "updateRawIR(): Shutdown in progress"));
+  }
+
+  MeterTypes::Values values{};
+
+  values.time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+
+  try {
+    values.volume = MeterError::getOrThrow(firmware_.getVolume());
+    values.rawIR = MeterError::getOrThrow(firmware_.getRawIR());
+  } catch (const MeterError &err) {
+    return std::unexpected(err);
+  }
+
+  meterLogger_->debug("Raw IR value: {}", values.rawIR);
+
   return {};
 }
 
@@ -186,6 +231,9 @@ void Meter::runLoop() {
     auto connectAction = handleResult(firmware_.connect());
     if (connectAction == MeterTypes::ErrorAction::SHUTDOWN)
       break;
+
+    // Wake rawIRLoop — it waits on firmware_.isConnected()
+    cv_.notify_all();
 
     if (availabilityCallback_)
       availabilityCallback_("connected");
@@ -225,4 +273,40 @@ void Meter::runLoop() {
   }
 
   meterLogger_->debug("Meter run loop stopped.");
+}
+
+void Meter::rawIRLoop() {
+
+  while (handler_.isRunning()) {
+
+    // --- Wait until connected ---
+    {
+      std::unique_lock<std::mutex> lock(cbMutex_);
+      cv_.wait(lock, [this] {
+        return firmware_.isConnected() || !handler_.isRunning();
+      });
+    }
+
+    // get raw IR and volume
+    auto rawResult = updateRawIR();
+    if (!rawResult) {
+      const MeterError &err = rawResult.error();
+      if (err.severity == MeterError::Severity::SHUTDOWN) {
+        // Global shutdown in progress — exit cleanly
+        break;
+      }
+
+      // Any other error (TRANSIENT, or FATAL like EINVAL while disconnected)
+      // — wait quietly.  runLoop owns the connection and will reconnect.
+      meterLogger_->debug("Raw IR loop waiting: {}", err.describe());
+    }
+
+    // --- Wait for next update interval ---
+    {
+      std::unique_lock<std::mutex> lock(cbMutex_);
+      cv_.wait_for(lock, std::chrono::milliseconds(50),
+                   [this] { return !handler_.isRunning(); });
+    }
+  }
+  meterLogger_->debug("Raw IR loop stopped.");
 }

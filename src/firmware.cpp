@@ -25,7 +25,7 @@ Firmware::~Firmware(void) { disconnect(); }
 void Firmware::disconnect(void) {
   // Stop worker thread first
   if (workerRunning_) {
-    workerRunning_ = false;
+    workerRunning_.store(false);
     queueCV_.notify_all();
 
     if (serialWorker_.joinable()) {
@@ -142,8 +142,8 @@ std::expected<void, MeterError> Firmware::connect(void) {
   firmwareLogger_->info("Meter connected (8N1, {} baud)", baudSpeed);
 
   // Start serial worker thread
-  workerRunning_ = true;
   serialWorker_ = std::thread(&Firmware::serialWorkerLoop, this);
+  workerRunning_.store(true);
 
   return {};
 }
@@ -151,18 +151,18 @@ std::expected<void, MeterError> Firmware::connect(void) {
 void Firmware::serialWorkerLoop() {
   firmwareLogger_->debug("Serial worker thread started");
 
-  while (workerRunning_ && handler_.isRunning()) {
+  while (workerRunning_.load() == true && handler_.isRunning()) {
     std::shared_ptr<SerialCommand> cmd;
 
     // Wait for command in queue
     {
       std::unique_lock<std::mutex> lock(queueMutex_);
       queueCV_.wait(lock, [this] {
-        return !commandQueue_.empty() || !workerRunning_ ||
+        return !commandQueue_.empty() || workerRunning_.load() == false ||
                !handler_.isRunning();
       });
 
-      if (!workerRunning_ || !handler_.isRunning()) {
+      if (workerRunning_.load() == false || !handler_.isRunning()) {
         break;
       }
 
@@ -247,7 +247,7 @@ std::expected<std::array<uint8_t, Firmware::RECEIVE_BUFFER_SIZE>, MeterError>
 Firmware::sendCommand(FirmwareTypes::Command cmd, uint8_t b1, uint8_t b2,
                       uint8_t b3, uint8_t b4, uint8_t b5) {
 
-  if (!workerRunning_) {
+  if (workerRunning_.load() == false) {
     return std::unexpected(
         MeterError::custom(EINVAL, "Serial worker not running"));
   }
@@ -380,4 +380,18 @@ std::expected<void, MeterError> Firmware::setThresholdLevels(int16_t low,
     return std::unexpected(cmdResult.error());
 
   return {};
+}
+
+std::expected<int, MeterError> Firmware::getRawIR(void) {
+  auto cmdResult = sendCommand(
+      FirmwareTypes::Command::MeasureRequestDsp,
+      static_cast<uint8_t>(FirmwareTypes::DspValue::RawIr), 0, 0, 0, 0);
+  if (!cmdResult)
+    return std::unexpected(cmdResult.error());
+
+  // Extract response bytes from returned buffer
+  const auto &rxBuffer = cmdResult.value();
+
+  return FirmwareUtils::bytesToInt(rxBuffer[1], rxBuffer[2], rxBuffer[3],
+                                   rxBuffer[4]);
 }

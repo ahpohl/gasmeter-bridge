@@ -34,11 +34,13 @@ public:
 
 private:
   void runLoop();
+  void rawIRLoop();
   MeterTypes::ErrorAction
   handleResult(std::expected<void, MeterError> &&result);
   void disconnect(void);
   std::expected<void, MeterError> updateValuesAndJson(void);
   std::expected<void, MeterError> updateDeviceAndJson(void);
+  std::expected<void, MeterError> updateRawIR(void);
 
   const MeterConfig &cfg_;
   MeterTypes::Values values_;
@@ -57,6 +59,8 @@ private:
   mutable std::mutex cbMutex_;
   std::condition_variable cv_;
   std::thread worker_;
+  std::thread rawIRWorker_;
+  std::atomic<bool> deviceUpdated_{false};
 
   // --- logger ---
   std::shared_ptr<spdlog::logger> meterLogger_;

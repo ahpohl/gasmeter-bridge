@@ -25,6 +25,8 @@ public:
   std::expected<void, MeterError> setVolume(double volume);
   std::expected<void, MeterError> clearVolume(void);
   std::expected<void, MeterError> setThresholdLevels(int16_t low, int16_t high);
+  std::expected<int, MeterError> getRawIR(void);
+  bool isConnected(void) { return workerRunning_.load(); };
 
   static constexpr int SEND_BUFFER_SIZE = 8;
   static constexpr int RECEIVE_BUFFER_SIZE = 7;
@@ -47,7 +49,7 @@ private:
 
   // Serial worker thread
   std::thread serialWorker_;
-  bool workerRunning_{false};
+  std::atomic<bool> workerRunning_{false};
 
   // Command queue (thread-safe)
   std::queue<std::shared_ptr<SerialCommand>> commandQueue_;

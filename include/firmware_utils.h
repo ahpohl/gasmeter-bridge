@@ -62,6 +62,14 @@ inline double bytesToDouble(const uint8_t &b1, const uint8_t &b2,
   return static_cast<double>(valueInt) / 100.0;
 }
 
+inline double bytesToInt(const uint8_t &b1, const uint8_t &b2,
+                         const uint8_t &b3, const uint8_t &b4) {
+  int32_t valueInt =
+      static_cast<int32_t>(b1) | (static_cast<int32_t>(b2) << 8) |
+      (static_cast<int32_t>(b3) << 16) | (static_cast<int32_t>(b4) << 24);
+  return valueInt;
+}
+
 inline std::array<uint8_t, 4> doubleToBytes(double val) {
   std::array<uint8_t, 4> bytes{};
   int32_t valueInt = static_cast<int32_t>(val * 100.0);
